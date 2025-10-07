@@ -10,3 +10,5 @@ games/flame_splatting/FLAME/model
 data/
 experiments/
 run.sh
+
+hotdog_training_log

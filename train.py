@@ -9,6 +9,8 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+# from pytorch3d.io import load_objs_as_meshes
+
 import os
 import torch
 from random import randint
@@ -35,6 +37,16 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+from PIL import Image
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+
+import numpy as np
+from pathlib import Path
+
+SCENE_NAME = "hotdog"
+check_path = Path(f'/mnt/data1/syjintw/NEU/gaussian-mesh-splatting/training_check/{SCENE_NAME}')
+check_path.mkdir(parents=True, exist_ok=True)
 
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
              debug_from, save_xyz):
@@ -48,8 +60,41 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    # >>>> [YC] 
+    # Change diff-rasterization settings
+
+    # bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    # background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    
+    # # Load static image background
+    # background_image_path = "/home/syjintw/Desktop/NEU/gaussian-mesh-splatting/output_render_no_light.png"
+    # img = Image.open(background_image_path).convert("RGB")
+    # viewpoint_camera_height = 800
+    # viewpoint_camera_width = 800
+    # # === 1. Use PIL to load images ===
+    # img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
+    # # === 2. Change image to Tensor ===
+    # transform = T.Compose([
+    #     T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
+    # ])
+    # background = transform(img).to(torch.float32).cuda()
+    
+    # Not sure why need to get background in this part
+    # --------------------------- Load background image -------------------------- #
+    background_image_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/r_0.png"
+    img = Image.open(background_image_path).convert("RGB")
+    viewpoint_camera_height = 800
+    viewpoint_camera_width = 800
+    img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
+    transform = T.Compose([
+        T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
+    ])
+    background = transform(img).to(torch.float32).cuda()
+    
+    # ----------------------------- Load depth image ----------------------------- #
+    background_depth_pt_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/r_0.pt"
+    background_depth = torch.load(background_depth_pt_path).unsqueeze(0)
+    # <<<< [YC]
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
@@ -69,7 +114,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 net_image_bytes = None
                 custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
                 if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
+                    # net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
+                    net_image = render(custom_cam, gaussians, pipe, background, background_depth, scaling_modifer)["render"] # [YC] add
                     net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2,
                                                                                                                0).contiguous().cpu().numpy())
                 network_gui.send(net_image_bytes, dataset.source_path)
@@ -89,24 +135,109 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+        
+        rand_cam_id = randint(0, len(viewpoint_stack) - 1)
+        # rand_cam_id = 0
+        viewpoint_cam = viewpoint_stack.pop(rand_cam_id)
+        print(viewpoint_cam.uid, viewpoint_cam.image_name)
+        
+        # >>>> [YC] 
+        # ------------------------------ Mesh background ----------------------------- #
+        background_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
+        img = Image.open(background_image_path).convert("RGB")
+        viewpoint_camera_height = 800
+        viewpoint_camera_width = 800
+        img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
+
+        if iteration % 100 == 0:
+            output_path = "output.png"
+            img.save(output_path, format="PNG")
+
+        transform = T.Compose([
+            T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
+        ])
+        background = transform(img).to(torch.float32).cuda()
+        
+        # ------------------------------ Mesh depth background ----------------------------- #
+        background_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
+        background_depth = torch.load(background_depth_pt_path)
+
+        # print("background_depth.shape:", background_depth.shape)
+        # print("background_depth[:][350][350]:", background_depth[0][350][350])
+        # print("background_depth[:][400][400]:", background_depth[0][400][400])
+        
+        # bg = torch.rand((3), device="cuda") if opt.random_background else background
+        # bg_depth = torch.rand((3), device="cuda") if opt.random_background else background_depth
+        bg = background
+        bg_depth = background_depth.unsqueeze(0).to("cuda")
+        
+        # ------------------------------ Pure background ----------------------------- #
+        viewpoint_camera_height = 800
+        viewpoint_camera_width = 800
+        
+        pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+        # pure_bg_template = [0, 0, 0]
+        pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda")
+        pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
+        # <<<< [YC] 
 
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
-        bg = torch.rand((3), device="cuda") if opt.random_background else background
+        # >>>> [YC]
+        
+        # ------------- Render mesh background and mesh depth background ------------- #
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
+        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, pure_bg_depth)
+        image = render_pkg["render"]
+        viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        
+        # ------------- Render pure background and fake depth background ------------- #
+        render_pure_bg = render(viewpoint_cam, gaussians, pipe, pure_bg, pure_bg_depth)
+        image_gs = render_pure_bg["render"]
+        # viewspace_point_tensor, visibility_filter, radii = render_pure_bg["viewspace_points"], render_pure_bg["visibility_filter"], render_pure_bg["radii"]
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
-        render_pkg["visibility_filter"], render_pkg["radii"]
-
-        # Loss
+        # ------------- Render pure mesh background and mesh depth background ------------- #
+        render_pure_mesh_bg = render(viewpoint_cam, gaussians, pipe, pure_bg, bg_depth)
+        image_gs_mesh = render_pure_mesh_bg["render"]
+        
+        # -------------------------- Load ground truth image ------------------------- #
         gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss.backward()
 
+        # ------------------- Change Tensor to PIL.Image for saving ------------------ #
+        if iteration % 100 == 0:
+            img_to_save = image.detach().clamp(0, 1).cpu()
+            img_pil = TF.to_pil_image(img_to_save)
+            img_pil.save(check_path/f"{iteration}.png")
+            
+            gs_img_to_save = image_gs.detach().clamp(0, 1).cpu()
+            gs_img_pil = TF.to_pil_image(gs_img_to_save)
+            gs_img_pil.save(check_path/f"{iteration}_gs.png")
+            
+            gs_mesh_img_to_save = image_gs_mesh.detach().clamp(0, 1).cpu()
+            gs_mesh_img_pil = TF.to_pil_image(gs_mesh_img_to_save)
+            gs_mesh_img_pil.save(check_path/f"{iteration}_gs_mesh.png")
+            
+            gt_img_to_save = gt_image.detach().clamp(0, 1).cpu()
+            gt_img_pil = TF.to_pil_image(gt_img_to_save)
+            gt_img_pil.save(check_path/f"{iteration}_gt.png")
+
+        # <<<< [YC]
+        
+        # Loss
+        # Ll1 = l1_loss(image, gt_image)
+        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        
+        Ll1 = l1_loss(image_gs, gt_image)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image_gs, gt_image))
+        
+        # # Brutally adjust loss, but keeping the backward information
+        # Ll1 = 0.0
+        # loss = image.mean() * 0.0 + 0.5
+
+        loss.backward()
+        
         iter_end.record()
 
         with torch.no_grad():
@@ -119,12 +250,13 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
-                            testing_iterations, scene, render, (pipe, background))
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
+            #                 testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
+            #! [YC] note: original "gs_mesh" will skip densification
             # Densification
             if (args.gs_type == "gs") or (args.gs_type == "gs_flat"):
                 if iteration < opt.densify_until_iter:
@@ -141,6 +273,10 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                     if iteration % opt.opacity_reset_interval == 0 or (
                             dataset.white_background and iteration == opt.densify_from_iter):
                         gaussians.reset_opacity()
+            # >>>> [YC] add
+            elif args.gs_type == "gs_mesh":
+                pass
+            # <<<< [YC] add
 
             # Optimizer step
             if iteration < opt.iterations:
@@ -233,8 +369,10 @@ if __name__ == "__main__":
     parser.add_argument("--meshes", nargs="+", type=str, default=[])
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
+    # parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[3_000])
+    # parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[3_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
