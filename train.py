@@ -45,7 +45,7 @@ import numpy as np
 from pathlib import Path
 
 SCENE_NAME = "hotdog"
-check_path = Path(f'/mnt/data1/syjintw/NEU/gaussian-mesh-splatting/training_check/{SCENE_NAME}')
+check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
 check_path.mkdir(parents=True, exist_ok=True)
 
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
@@ -206,7 +206,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 100 == 0:
+        if iteration % 1 == 0:
             img_to_save = image.detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
             img_pil.save(check_path/f"{iteration}.png")
