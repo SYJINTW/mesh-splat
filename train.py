@@ -44,6 +44,15 @@ import torchvision.transforms.functional as TF
 import numpy as np
 from pathlib import Path
 
+from pytorch3d.io import load_objs_as_meshes
+from pytorch3d.renderer import (
+    AmbientLights,
+    RasterizationSettings, 
+    MeshRenderer, 
+    MeshRasterizer,  
+    SoftPhongShader,
+    )
+
 SCENE_NAME = "hotdog"
 check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
 check_path.mkdir(parents=True, exist_ok=True)
@@ -181,14 +190,16 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
         # <<<< [YC] 
 
+        textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
         # >>>> [YC]
-        
         # ------------- Render mesh background and mesh depth background ------------- #
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth,
+                            textured_mesh=textured_mesh)
         # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, pure_bg_depth)
         image = render_pkg["render"]
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]

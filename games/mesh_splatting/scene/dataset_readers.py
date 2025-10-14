@@ -62,10 +62,9 @@ def readNerfSyntheticMeshInfo(
     
     # >>>> [YC] add
     # Access texture info
-    print("type(mesh_scene.visual):", type(mesh_scene.visual))
-    print("type(mesh_scene.visual):", type(mesh_scene.visual)) # should be TextureVisuals
-    print("mesh_scene.visual.uv.shape:", mesh_scene.visual.uv.shape) # UV coordinates per vertex
-    print("mesh_scene.visual.material.image:", mesh_scene.visual.material.image) # PIL image
+    print("type(mesh_scene.visual):", type(mesh_scene.visual)) # [YC] debug: should be TextureVisuals
+    print("mesh_scene.visual.uv.shape:", mesh_scene.visual.uv.shape) # [YC] debug: UV coordinates per vertex
+    print("mesh_scene.visual.material.image:", mesh_scene.visual.material.image) # [YC] debug: PIL image
     
     # Extract texture as numpy
     texture_img = np.array(mesh_scene.visual.material.image)  # (H, W, 3) or (H, W, 4)
@@ -85,33 +84,12 @@ def readNerfSyntheticMeshInfo(
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "points3d.ply")
+    
     # if not os.path.exists(ply_path):
     if True:
-        # Since this data set has no colmap data, we start with random points
-        num_pts_each_triangle = num_splats
-        num_pts = num_pts_each_triangle * triangles.shape[0]
-        print(
-            f"Generating random point cloud ({num_pts})..."
-        )
-
-        # We create random points inside the bounds traingles
-        alpha = torch.rand(
-            triangles.shape[0],
-            num_pts_each_triangle,
-            3
-        )
-
-        xyz = torch.matmul(
-            alpha,
-            triangles
-        )
-        xyz = xyz.reshape(num_pts, 3)
-
-        shs = np.random.random((num_pts, 3)) / 255.0
-        
-        # >>>> [YC]
+        # >>>> [YC] Prepare UV
         face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
-        H, W = texture_img.shape[:2]
+        H, W = texture_img.shape[:2]        
         
         # Convert UVs (3 per face) to pixel coordinates
         px = (face_uvs[..., 0] * (W - 1)).astype(int)
@@ -126,43 +104,39 @@ def readNerfSyntheticMeshInfo(
         
         # Average per-triangle color
         tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
-
+        # <<<< [YC] 
+        
+        # We create random points inside the bounds traingles
+        alpha = torch.rand(
+            triangles.shape[0],
+            num_splats, #! [YC] note: this part decide how many points per triangle
+            3 
+        )
+        xyz = torch.matmul(
+            alpha,
+            triangles
+        )
+        xyz = xyz.reshape(num_splats * triangles.shape[0], 3)
+        print(alpha.shape, xyz.shape) # [YC] debug
+        
         # Repeat each triangle’s color for its num_pts_each_triangle points
-        colors = np.repeat(tri_avg_colors, num_pts_each_triangle, axis=0)  # (num_pts, 3)
-    
-
-        # # Interpolated UVs
-        # uvs = np.einsum("fpc,fcv->fpv", alpha.numpy(), face_uvs)  # (n_faces, num_pts_per_face, 2)
-        # uvs = uvs.reshape(-1, 2)
+        colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
         
-        # # Clamp to valid range [0,1]
-        # uvs = np.clip(uvs, 0.0, 1.0)
-        
-        # # Convert UVs to pixel coordinates
-        # px = (uvs[:, 0] * (W - 1)).astype(int)
-        # py = ((1 - uvs[:, 1]) * (H - 1)).astype(int)  # flip Y
-        
-        # # Extra safety clamp
-        # px = np.clip(px, 0, W - 1)
-        # py = np.clip(py, 0, H - 1)
-        
-        # # Sample texture
-        # colors = texture_img[py, px, :3]  # (num_pts, 3) in RGB 
-        # <<<< [YC]
-
         pcd = MeshPointCloud(
             alpha=alpha,
             points=xyz,
             # colors=SH2RGB(shs),
             colors=colors/255.0,
-            normals=np.zeros((num_pts, 3)),
+            normals=np.zeros((num_splats*triangles.shape[0], 3)),
             vertices=vertices,
             faces=faces,
             transform_vertices_function=transform_vertices_function,
             triangles=triangles.cuda()
         )
+        print("Created MeshPointCloud with", pcd.points.shape[0], "points.")
 
-        storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
+        # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
+        storePly(ply_path, pcd.points, colors)
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,

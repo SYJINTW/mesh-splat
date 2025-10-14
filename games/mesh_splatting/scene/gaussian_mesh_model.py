@@ -74,7 +74,7 @@ class GaussianMeshModel(GaussianModel):
         )
         self.faces = torch.tensor(self.point_cloud.faces).cuda()
 
-        self._alpha = nn.Parameter(alpha_point_cloud.requires_grad_(True))  # check update_alpha
+        self._alpha = nn.Parameter(alpha_point_cloud.requires_grad_(True))
         self.update_alpha()
         self._features_dc = nn.Parameter(features[:, :, 0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:, :, 1:].transpose(1, 2).contiguous().requires_grad_(True))
@@ -168,6 +168,11 @@ class GaussianMeshModel(GaussianModel):
         self.triangles = self.vertices[self.faces]
         self._calc_xyz()
 
+    def update_alpha_triangle(self):
+        """
+        Update alpha values triangle by triangle instead of all at once.
+        """
+    
     def training_setup(self, training_args):
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
