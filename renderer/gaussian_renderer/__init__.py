@@ -28,6 +28,8 @@ from torchvision.transforms import functional as TF, InterpolationMode
 from scene.cameras import convert_camera_from_gs_to_pytorch3d
 from PIL import Image
 
+import time
+
 def transform_vertices_function(vertices, c=1):
     vertices = vertices[:, [0, 2, 1]]
     vertices[:, 1] = -vertices[:, 1]
@@ -46,6 +48,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     
     # >>>> [YC] To support real time mesh rendering as background
     if textured_mesh is not None:
+        start_time = time.time()
         image_height = 800
         image_width = 800
         faces_per_pixel = 1
@@ -53,7 +56,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         p3d_cameras = convert_camera_from_gs_to_pytorch3d(
             [viewpoint_camera]
         )
-        print(len(p3d_cameras))
+        # print(len(p3d_cameras))
         
         mesh_raster_settings = RasterizationSettings(
             image_size=(image_height, image_width),
@@ -84,8 +87,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         bg_color = rgb_img.permute(2, 0, 1).contiguous()
         
         # ------------------------- Save color for debugging ------------------------- #
-        bg_pil = TF.to_pil_image(bg_color.cpu())   # Convert tensor → PIL Image
-        bg_pil.save("./bg_color.png")
+        # bg_pil = TF.to_pil_image(bg_color.cpu())   # Convert tensor → PIL Image
+        # bg_pil.save("./bg_color.png")
         
         # ------------------------------- Handle depth ------------------------------- #
         # Get fragments from rasterizer
@@ -95,41 +98,46 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         # Mask out pixels that didn’t hit any face
         mask = fragments.pix_to_face[0, ..., 0] >= 0
         depth = depth.masked_fill(~mask, -1)
-        print(depth.unsqueeze(0).shape, bg_depth.shape)
-        print(type(depth.unsqueeze(0)), type(bg_depth))
-        are_equal = torch.equal(depth.unsqueeze(0), bg_depth)
-        print("Exact match:", are_equal)        
+        
+        # print(depth.unsqueeze(0).shape, bg_depth.shape)
+        # print(type(depth.unsqueeze(0)), type(bg_depth))
+        # are_equal = torch.equal(depth.unsqueeze(0), bg_depth)
+        # print("Exact match:", are_equal)        
+        
         bg_depth = depth.unsqueeze(0)
         
         # ------------------------ Save depth pt for debugging ----------------------- #
-        torch.save(depth, "./bg_depth.pt")
+        # torch.save(depth, "./bg_depth.pt")
         
         # ---------------------- Save depth image for debugging ---------------------- #
-        # Replace NaNs with max depth for visualization
-        valid_depth = depth[~torch.isnan(depth)]
-        if valid_depth.numel() > 0:
-            max_val = valid_depth.max()
-        else:
-            max_val = 0.0
-        depth_vis = depth.clone()
-        depth_vis[torch.isnan(depth_vis)] = max_val
-        # Normalize depth to 0–1 for image saving
-        min_val = depth_vis.min()
-        max_val = depth_vis.max()
-        print(f"Depth min: {min_val}, max: {max_val}")
-        depth_vis = (depth_vis - min_val) / (max_val - min_val + 1e-8)
-        # Add channel, resize to exactly 800x800, then drop channel
-        depth_resized = TF.resize(
-            depth_vis.unsqueeze(0),  # (1,H,W)
-            [800, 800],
-            interpolation=InterpolationMode.BILINEAR,
-            antialias=True
-        ).squeeze(0)  # (800,800)
-        # Convert to 8-bit grayscale and save
-        depth_u8 = (depth_resized * 255).round().clamp(0, 255).to(torch.uint8)  # (800,800)
-        depth_pil = Image.fromarray(depth_u8.cpu().numpy(), mode='L')
-        # Convert to PIL Image and save as PNG
-        depth_pil.save("./bg_depth.png")
+        # # Replace NaNs with max depth for visualization
+        # valid_depth = depth[~torch.isnan(depth)]
+        # if valid_depth.numel() > 0:
+        #     max_val = valid_depth.max()
+        # else:
+        #     max_val = 0.0
+        # depth_vis = depth.clone()
+        # depth_vis[torch.isnan(depth_vis)] = max_val
+        # # Normalize depth to 0–1 for image saving
+        # min_val = depth_vis.min()
+        # max_val = depth_vis.max()
+        # # print(f"Depth min: {min_val}, max: {max_val}")
+        # depth_vis = (depth_vis - min_val) / (max_val - min_val + 1e-8)
+        # # Add channel, resize to exactly 800x800, then drop channel
+        # depth_resized = TF.resize(
+        #     depth_vis.unsqueeze(0),  # (1,H,W)
+        #     [800, 800],
+        #     interpolation=InterpolationMode.BILINEAR,
+        #     antialias=True
+        # ).squeeze(0)  # (800,800)
+        # # Convert to 8-bit grayscale and save
+        # depth_u8 = (depth_resized * 255).round().clamp(0, 255).to(torch.uint8)  # (800,800)
+        # depth_pil = Image.fromarray(depth_u8.cpu().numpy(), mode='L')
+        # # Convert to PIL Image and save as PNG
+        # depth_pil.save("./bg_depth.png")
+        
+        end_time = time.time()
+        # print(f"Mesh rendering time: {end_time - start_time:.4f} seconds")
     # <<<< [YC]
         
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
@@ -140,7 +148,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         pass
     
     # Set up rasterization configuration
-    print("viewpoint_camera.FoVx:", viewpoint_camera.FoVx)
+    # print("viewpoint_camera.FoVx:", viewpoint_camera.FoVx)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
     viewpoint_camera.camera_center = viewpoint_camera.camera_center
@@ -169,7 +177,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     # print("viewpoint_camera.world_view_transform:", viewpoint_camera.world_view_transform)
     # print("viewpoint_camera.full_proj_transform:", viewpoint_camera.full_proj_transform)
     
-    print("GaussianRasterizer:init")
+    # print("GaussianRasterizer:init")
     rasterizer = GaussianRasterizer(raster_settings=raster_settings) # __init__
     
     _xyz = pc.get_xyz
@@ -216,7 +224,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     #     rotations = rotations,
     #     cov3D_precomp = cov3D_precomp) # forward
 
-    print("rasterizer")
+    # print("rasterizer")
     rendered_image, radii = rasterizer(
         means3D = means3D,
         means2D = means2D,

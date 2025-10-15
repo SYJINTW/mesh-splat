@@ -105,6 +105,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
     return cam_infos
 
 def fetchPly(path):
+    print(f"Reading PLY file {path}")
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
@@ -231,6 +232,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "points3d.ply")
+    
     if not os.path.exists(ply_path):
         # Since this data set has no colmap data, we start with random points
         num_pts = 100_000
@@ -242,6 +244,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
         pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
         storePly(ply_path, xyz, SH2RGB(shs) * 255)
+        
     try:
         pcd = fetchPly(ply_path)
     except:

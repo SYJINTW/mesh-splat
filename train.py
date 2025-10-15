@@ -53,10 +53,58 @@ from pytorch3d.renderer import (
     SoftPhongShader,
     )
 
+import open3d as o3d
+from pytorch3d.structures import Pointclouds
+from pytorch3d.renderer import (
+    PointsRasterizationSettings,
+    PointsRenderer,
+    PointsRasterizer,
+    AlphaCompositor
+)
+from scene.cameras import convert_camera_from_gs_to_pytorch3d
+from pytorch3d.renderer.blending import BlendParams
+
 SCENE_NAME = "hotdog"
 check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
 check_path.mkdir(parents=True, exist_ok=True)
 
+def warmup(viewpoint_cameras):
+    """
+    Render the point cloud using cameras from 3DGS
+    """
+    print("Warmup rendering...")
+    p3d_cameras = convert_camera_from_gs_to_pytorch3d(
+        viewpoint_cameras
+    )
+    
+    pcd = o3d.io.read_point_cloud("/mnt/data1/syjintw/NEU/dataset/hotdog/points3d.ply")
+    points = torch.tensor(np.asarray(pcd.points), dtype=torch.float32, device='cuda')
+    colors = torch.tensor(np.asarray(pcd.colors), dtype=torch.float32, device='cuda')
+    point_cloud = Pointclouds(points=[points], features=[colors])
+    
+    raster_settings = PointsRasterizationSettings(
+        image_size=(800, 800),
+        radius=0.001,        # controls point size
+        points_per_pixel=10 # controls density
+    )
+    
+    for idx, p3d_camera in enumerate(p3d_cameras):
+        lights = AmbientLights(device="cuda")
+        rasterizer = PointsRasterizer(
+            cameras=p3d_camera, 
+            raster_settings=raster_settings)
+        renderer = PointsRenderer(
+            rasterizer=rasterizer,
+            compositor=AlphaCompositor()
+        )
+        
+        image = renderer(point_cloud)  # (1, H, W, 4)
+        image = image[0, ..., :3]
+        image_color = image.permute(2, 0, 1).contiguous()
+        
+        image_pil = TF.to_pil_image(image_color.cpu())   # Convert tensor → PIL Image
+        image_pil.save(f"./warmup/{idx}.png")
+    
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
              debug_from, save_xyz):
     first_iter = 0
@@ -69,6 +117,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
+    textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    # warmup(scene.getTrainCameras().copy())
+    
     # >>>> [YC] 
     # Change diff-rasterization settings
 
@@ -148,7 +199,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         rand_cam_id = randint(0, len(viewpoint_stack) - 1)
         # rand_cam_id = 0
         viewpoint_cam = viewpoint_stack.pop(rand_cam_id)
-        print(viewpoint_cam.uid, viewpoint_cam.image_name)
+        # print(viewpoint_cam.uid, viewpoint_cam.image_name)
         
         # >>>> [YC] 
         # ------------------------------ Mesh background ----------------------------- #
@@ -189,8 +240,6 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda")
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
         # <<<< [YC] 
-
-        textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
     
         # Render
         if (iteration - 1) == debug_from:
@@ -217,7 +266,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 1 == 0:
+        if iteration % 50 == 0:
             img_to_save = image.detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
             img_pil.save(check_path/f"{iteration}.png")
@@ -240,7 +289,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # Ll1 = l1_loss(image, gt_image)
         # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         
-        Ll1 = l1_loss(image_gs, gt_image)
+        Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image_gs, gt_image))
         
         # # Brutally adjust loss, but keeping the backward information

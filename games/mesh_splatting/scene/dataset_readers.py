@@ -84,7 +84,7 @@ def readNerfSyntheticMeshInfo(
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "points3d.ply")
-    
+    print("ply_path:", ply_path)
     # if not os.path.exists(ply_path):
     if True:
         # >>>> [YC] Prepare UV
@@ -136,7 +136,7 @@ def readNerfSyntheticMeshInfo(
         print("Created MeshPointCloud with", pcd.points.shape[0], "points.")
 
         # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
-        storePly(ply_path, pcd.points, colors)
+        # storePly(ply_path, pcd.points, colors)
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,

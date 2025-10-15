@@ -88,10 +88,10 @@ class Scene:
             with open(os.path.join(self.model_path, "train_cameras.json"), 'w') as file:
                 json.dump(json_train_cams, file)
                 
-        if shuffle:
-            print("shuffle") # [YC] debug
-            random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
-            random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
+        # if shuffle:
+        #     print("shuffle") # [YC] debug
+        #     random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
+        #     random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
 
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
@@ -112,7 +112,7 @@ class Scene:
             if args.gs_type == "gs_mesh": #! [YC] need to aware of gs_type
                 self.gaussians.triangles = scene_info.point_cloud.triangles
         else: # [YC] note: first time training
-            print("not self.loaded_iter") # [YC] debug
+            print("Not self.loaded_iter") # [YC] debug
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
     def save(self, iteration):

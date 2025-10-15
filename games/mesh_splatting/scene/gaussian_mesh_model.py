@@ -67,7 +67,8 @@ class GaussianMeshModel(GaussianModel):
         features[:, :3, 0] = fused_color
         features[:, 3:, 1:] = 0.0
 
-        opacities = inverse_sigmoid(0.1 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
+        # opacities = inverse_sigmoid(0.1 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
+        opacities = inverse_sigmoid(0.01 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self.vertices = nn.Parameter(
             self.point_cloud.vertices.clone().detach().requires_grad_(True).cuda().float()
