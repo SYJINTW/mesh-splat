@@ -14,6 +14,7 @@
 import numpy as np
 import torch
 from typing import NamedTuple
+from typing import Optional
 
 
 class MeshPointCloud(NamedTuple):
@@ -25,3 +26,4 @@ class MeshPointCloud(NamedTuple):
     faces: np.array
     transform_vertices_function: object
     triangles: torch.Tensor
+    triangle_indices: Optional[torch.Tensor] = None # [YC] add

@@ -266,7 +266,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 50 == 0:
+        if iteration % 1 == 0:
             img_to_save = image.detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
             img_pil.save(check_path/f"{iteration}.png")

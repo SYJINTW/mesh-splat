@@ -51,6 +51,9 @@ class GaussianMeshModel(GaussianModel):
         self.point_cloud = pcd
         self.triangles = self.point_cloud.triangles
         self.spatial_lr_scale = spatial_lr_scale
+        
+        self.triangle_indices = pcd.triangle_indices.cuda() # [YC] add
+
         pcd_alpha_shape = pcd.alpha.shape
 
         print("Number of faces: ", pcd_alpha_shape[0])
@@ -67,8 +70,8 @@ class GaussianMeshModel(GaussianModel):
         features[:, :3, 0] = fused_color
         features[:, 3:, 1:] = 0.0
 
-        # opacities = inverse_sigmoid(0.1 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
-        opacities = inverse_sigmoid(0.01 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
+        opacities = inverse_sigmoid(0.1 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
+        # opacities = inverse_sigmoid(0.01 * torch.ones((pcd.points.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self.vertices = nn.Parameter(
             self.point_cloud.vertices.clone().detach().requires_grad_(True).cuda().float()
@@ -93,13 +96,17 @@ class GaussianMeshModel(GaussianModel):
         the triangles forming the mesh.
 
         """
-        _xyz = torch.matmul(
-            self.alpha,
-            self.triangles
-        )
-        self._xyz = _xyz.reshape(
-                _xyz.shape[0] * _xyz.shape[1], 3
-            )
+        # _xyz = torch.matmul(
+        #     self.alpha,
+        #     self.triangles
+        # )
+        # self._xyz = _xyz.reshape(
+        #         _xyz.shape[0] * _xyz.shape[1], 3
+        #     )
+        
+        triangle_idx = self.triangles[self.triangle_indices].detach()  # constants
+        _xyz = torch.bmm(self.alpha.unsqueeze(1), triangle_idx).squeeze(1)
+        self._xyz = _xyz.detach()
         
     def prepare_scaling_rot(self):
         """
@@ -142,12 +149,26 @@ class GaussianMeshModel(GaussianModel):
         s2 = dot(v2_init, v2) / 2.
         s0 = self.eps_s0 * torch.ones_like(s1)
         scales = torch.concat((s0, s1, s2), dim=1).unsqueeze(dim=1)
-        scales = scales.broadcast_to((*self.alpha.shape[:2], 3))
-        self._scaling = torch.log(
-            torch.nn.functional.relu(self._scale * scales.flatten(start_dim=0, end_dim=1)) + self.eps_s0
-        )
+        
+        # scales = scales.broadcast_to((*self.alpha.shape[:2], 3))
+        # self._scaling = torch.log(
+        #     torch.nn.functional.relu(self._scale * scales.flatten(start_dim=0, end_dim=1)) + self.eps_s0
+        # )
+        # rotation = torch.stack((v0, v1, v2), dim=1).unsqueeze(dim=1)
+        # rotation = rotation.broadcast_to((*self.alpha.shape[:2], 3, 3)).flatten(start_dim=0, end_dim=1)
+        # rotation = rotation.transpose(-2, -1)
+        # self._rotation = rot_to_quat_batch(rotation)
+        
+        scales = scales[self.triangle_indices]
+        with torch.no_grad():
+            s_input = self._scale * scales.flatten(start_dim=0, end_dim=1)
+            s_input = torch.nn.functional.relu(s_input) + self.eps_s0
+            new_scaling = torch.log(s_input)
+
+        self._scaling = new_scaling.detach()
         rotation = torch.stack((v0, v1, v2), dim=1).unsqueeze(dim=1)
-        rotation = rotation.broadcast_to((*self.alpha.shape[:2], 3, 3)).flatten(start_dim=0, end_dim=1)
+        # rotation = rotation.broadcast_to((*self.alpha.shape[:2], 3, 3)).flatten(start_dim=0, end_dim=1)
+        rotation = rotation[self.triangle_indices]
         rotation = rotation.transpose(-2, -1)
         self._rotation = rot_to_quat_batch(rotation)
 

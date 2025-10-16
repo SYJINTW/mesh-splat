@@ -87,6 +87,17 @@ def readNerfSyntheticMeshInfo(
     print("ply_path:", ply_path)
     # if not os.path.exists(ply_path):
     if True:
+        areas = trimesh.triangles.area(triangles.cpu().numpy())  # (N,) array
+        area_weights = areas / areas.mean()  # normalize around 1.0
+        num_splats_per_triangle = np.clip((area_weights * num_splats).astype(int), 0, 4)
+        print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+        
+        # Since this data set has no colmap data, we start with random points
+        num_pts = num_splats_per_triangle.sum()
+        print(
+            f"Generating random point cloud ({num_pts})..."
+        )
+        
         # >>>> [YC] Prepare UV
         face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
         H, W = texture_img.shape[:2]        
@@ -104,34 +115,102 @@ def readNerfSyntheticMeshInfo(
         
         # Average per-triangle color
         tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
-        # <<<< [YC] 
+        
+        print("tri_avg_colors:", tri_avg_colors.shape) # [YC] debug
+        # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
+        
         
         # We create random points inside the bounds traingles
-        alpha = torch.rand(
-            triangles.shape[0],
-            num_splats, #! [YC] note: this part decide how many points per triangle
-            3 
-        )
-        xyz = torch.matmul(
-            alpha,
-            triangles
-        )
-        xyz = xyz.reshape(num_splats * triangles.shape[0], 3)
-        print(alpha.shape, xyz.shape) # [YC] debug
+        xyz_list = []
+        alpha_list = []
+        color_list = []
         
-        # Repeat each triangle’s color for its num_pts_each_triangle points
-        colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
+        for i in range(triangles.shape[0]):
+            n = num_splats_per_triangle[i]
+            alpha = torch.rand(n, 3)
+            alpha = alpha / alpha.sum(dim=1, keepdim=True)  # normalize to barycentric coords
+
+            pts = (alpha[:, 0:1] * triangles[i, 0] +
+                   alpha[:, 1:2] * triangles[i, 1] +
+                   alpha[:, 2:3] * triangles[i, 2])
+
+            color = np.repeat(tri_avg_colors[i].reshape(1, 3), n, axis=0)  # (num_pts, 3)
+            # print(color.shape) # [YC] debug
+            
+            xyz_list.append(pts)
+            alpha_list.append(alpha)
+            color_list.append(color)
+
+        
+        xyz = torch.cat(xyz_list, dim=0)
+        xyz = xyz.reshape(num_pts, 3)
+        
+        alpha = torch.cat(alpha_list, dim=0)
+        
+        # shs = np.random.random((num_pts, 3)) / 255.0
+        colors = np.concatenate(color_list, axis=0)
+        print(colors.shape, xyz.shape, alpha.shape) # [YC] debug
+        
+        points = trimesh.points.PointCloud(np.array(xyz))
+
+        # Combine into a scene
+        scene = trimesh.Scene()
+        scene.add_geometry(mesh_scene)
+        scene.add_geometry(points)
+        
+        tri_indices = []
+        for i in range(triangles.shape[0]):
+            n = num_splats_per_triangle[i]
+            tri_indices.append(torch.full((n,), i, dtype=torch.long))
+        
+        tri_indices = torch.cat(tri_indices, dim=0)
+        
+        # # >>>> [YC] Prepare UV
+        # face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
+        # H, W = texture_img.shape[:2]        
+        
+        # # Convert UVs (3 per face) to pixel coordinates
+        # px = (face_uvs[..., 0] * (W - 1)).astype(int)
+        # py = ((1 - face_uvs[..., 1]) * (H - 1)).astype(int)
+        
+        # # Clamp
+        # px = np.clip(px, 0, W - 1)
+        # py = np.clip(py, 0, H - 1)
+        
+        # # Sample 3 vertex colors per triangle
+        # tri_vertex_colors = texture_img[py, px, :3]   # (n_faces, 3, 3)
+        
+        # # Average per-triangle color
+        # tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
+        # # <<<< [YC] 
+        
+        # # We create random points inside the bounds traingles
+        # alpha = torch.rand(
+        #     triangles.shape[0],
+        #     num_splats, #! [YC] note: this part decide how many points per triangle
+        #     3 
+        # )
+        # xyz = torch.matmul(
+        #     alpha,
+        #     triangles
+        # )
+        # xyz = xyz.reshape(num_splats * triangles.shape[0], 3)
+        # print(alpha.shape, xyz.shape) # [YC] debug
+        
+        # # Repeat each triangle’s color for its num_pts_each_triangle points
+        # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
         
         pcd = MeshPointCloud(
             alpha=alpha,
             points=xyz,
             # colors=SH2RGB(shs),
             colors=colors/255.0,
-            normals=np.zeros((num_splats*triangles.shape[0], 3)),
+            normals=np.zeros((num_pts, 3)),
             vertices=vertices,
             faces=faces,
             transform_vertices_function=transform_vertices_function,
-            triangles=triangles.cuda()
+            triangles=triangles.cuda(),
+            triangle_indices=tri_indices
         )
         print("Created MeshPointCloud with", pcd.points.shape[0], "points.")
 
@@ -143,6 +222,7 @@ def readNerfSyntheticMeshInfo(
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path)
+    
     return scene_info
 
 
