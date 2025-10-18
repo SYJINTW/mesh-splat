@@ -67,194 +67,174 @@ import trimesh
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import TexturesVertex
 
+from mesh_renderer_pytorch3d import mesh_renderer_pytorch3d
+import cv2
+import matplotlib.pyplot as plt
+
 SCENE_NAME = "hotdog"
 check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
 check_path.mkdir(parents=True, exist_ok=True)
 
-def warmup(viewpoint_cameras):
-    """
-    Render the point cloud using cameras from 3DGS
-    """
-    print("Warmup rendering...")
-    p3d_cameras = convert_camera_from_gs_to_pytorch3d(
-        viewpoint_cameras
-    )
-    
-    pcd = o3d.io.read_point_cloud("/mnt/data1/syjintw/NEU/dataset/hotdog/points3d.ply")
-    points = torch.tensor(np.asarray(pcd.points), dtype=torch.float32, device='cuda')
-    colors = torch.tensor(np.asarray(pcd.colors), dtype=torch.float32, device='cuda')
-    point_cloud = Pointclouds(points=[points], features=[colors])
-    
-    raster_settings = PointsRasterizationSettings(
-        image_size=(800, 800),
-        radius=0.001,        # controls point size
-        points_per_pixel=10 # controls density
-    )
-    
-    for idx, p3d_camera in enumerate(p3d_cameras):
-        lights = AmbientLights(device="cuda")
-        rasterizer = PointsRasterizer(
-            cameras=p3d_camera, 
-            raster_settings=raster_settings)
-        renderer = PointsRenderer(
-            rasterizer=rasterizer,
-            compositor=AlphaCompositor()
-        )
-        
-        image = renderer(point_cloud)  # (1, H, W, 4)
-        image = image[0, ..., :3]
-        image_color = image.permute(2, 0, 1).contiguous()
-        
-        image_pil = TF.to_pil_image(image_color.cpu())   # Convert tensor → PIL Image
-        image_pil.save(f"./warmup/{idx}.png")
+def load_with_white_bg(path):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
 
-def warmup_new(viewpoint_cameras, p3d_mesh):
+    if img.shape[2] == 4:  # RGBA
+        rgb = img[:, :, :3].astype(np.float32) / 255.0
+        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
+        white_bg = np.ones_like(rgb)
+        img_out = rgb * alpha + white_bg * (1 - alpha)
+    else:
+        img_out = img[:, :, :3].astype(np.float32) / 255.0
+
+    # Convert BGR to RGB because OpenCV loads in BGR order
+    img_out = img_out[:, :, ::-1]
+    return img_out
+
+def warmup(viewpoint_cameras, p3d_mesh,
+               image_height=800, image_width=800, faces_per_pixel=1,
+               device="cuda"):
     """
-    Render with mesh
+    The main idea is using the visual quality to decide how many Gaussians should we set on each triangle.
+    First, we render the mesh from each viewpoint camera, and compare with the ground truth images.
+    Then, we can get the distortion map (pixel-wise difference).
+    Second, we prioritize the triangles that project to high distortion pixels, and assign more Gaussians to them.
     """
-    # Trimesh
-    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
-    tm_faces = tm_mesh.faces  # (F, 3)
-    # tm_faces_sorted = np.sort(tm_faces, axis=1)  # sort each row (triangle)
+    debugging = True
+    if debugging:
+        heatmap_output_dir = Path(f"../distortion_heatmap")
+        heatmap_output_dir.mkdir(parents=True, exist_ok=True)
+        mesh_bg_output_dir = Path(f"../mesh_bg")
+        mesh_bg_output_dir.mkdir(parents=True, exist_ok=True)
     
-    # PyTorch3D
-    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device="cuda")
-    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device="cuda")  # keep order!
+    # Load mesh with Trimesh
+    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
+    
+    # Change Trimesh into PyTorch3D, and also handle texture from UV map
+    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device=device)
+    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device=device)  # keep order!
     verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
     textures = TexturesVertex(verts_features=verts_rgb)
-    p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
+    tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
     
-    image_height = 800
-    image_width = 800
-    faces_per_pixel = 1
-    
+    # Load mesh with PyTorch3D
+    p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to(device)
+
     triangle_filter = np.zeros(faces.shape[0], dtype=bool)
-    
-    filters = []
-    for i in range(len(viewpoint_cameras)):
-        p3d_cameras = convert_camera_from_gs_to_pytorch3d(
-            [viewpoint_cameras[i]]
+    for i, viewpoint_camera in enumerate(viewpoint_cameras):
+        # Load ground truth image
+        gt_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_camera.image_name}.png"
+        gt_img = load_with_white_bg(gt_image_path) # (W, H)
+        
+        # Render p3d_mesh with PyTorch3D for comparing the visual quality
+        p3d_mesh_color, p3d_mesh_depth, p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, p3d_mesh,
+                                                            image_height=image_height, image_width=image_width,
+                                                            faces_per_pixel=faces_per_pixel,
+                                                            device=device)
+        
+        # Convert p3d_mesh_color to NumPy for computing distortion
+        p3d_mesh_color_np = (
+            p3d_mesh_color[0, ..., :3]              # (H, W, 3)
+            .detach().cpu().numpy()                 # → NumPy
         )
+        p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
         
-        mesh_raster_settings = RasterizationSettings(
-            image_size=(image_height, image_width),
-            blur_radius=0.0, 
-            faces_per_pixel=faces_per_pixel,
-            # max_faces_per_bin=max_faces_per_bin
-        )
-        lights = AmbientLights(device="cuda")
-        
-        rasterizer = MeshRasterizer(
-            cameras=p3d_cameras[0], 
-            raster_settings=mesh_raster_settings,
-        )
-        
-        fragments = rasterizer(p3d_mesh)
-        
-        renderer = MeshRenderer(
-            rasterizer=rasterizer,
-            shader=SoftPhongShader(
-                device="cuda", 
-                cameras=p3d_cameras[0],
-                lights=lights,
-                # blend_params=BlendParams(background_color=(0.0, 0.0, 0.0)),
-                blend_params=BlendParams(background_color=(1.0, 1.0, 1.0)),
-            )
-        )
-        
-        rgb_img = renderer(p3d_mesh, cameras=p3d_cameras)[0, ..., :3]
-        face_idx_map = fragments.pix_to_face[0, ..., 0]
-        # print(rgb_img.shape, face_idx_map.shape)
-        
-        # mesh_scene = trimesh.load(f'/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj', force='mesh')
-        # mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
-        #     angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
-        # ))
-        
-        # ------------------ Load mask ------------------
-        mask_img = Image.open(f"/mnt/data1/syjintw/NEU/dataset/hotdog/distortion_thres0.05/r_{i}.png").convert("L")  # grayscale
-        mask = np.array(mask_img)
-        mask_bool = mask > 128  # white = keep (True), black = drop (False)
-        H, W = mask_bool.shape
-        
-        # ------------------ Face index per pixel ------------------
-        face_idx_map = fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W)
-        # face_idx_map = -1 means background
-        
-        # ------------------ Determine which faces to keep ------------------
-        face_keep = np.zeros(p3d_mesh.num_faces_per_mesh()[0].item(), dtype=bool)
-        valid_mask = face_idx_map >= 0
-        # faces that map to white pixels
-        white_faces = face_idx_map[valid_mask & mask_bool]
-        face_keep[np.unique(white_faces)] = True
-        
-        # ------------------ Extract mesh geometry ------------------
-        verts = p3d_mesh.verts_packed().cpu().numpy()
-        faces = p3d_mesh.faces_packed().cpu().numpy()
+        if debugging:
+            # Transfer p3d_mesh_color to PIL Image for debugging
+            p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
+            p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
+            
+            # Compute heatmap (L2 difference)
+            diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
+            diff_normalized = diff / np.max(diff)  # normalize to [0,1]
 
-        kept_faces = faces[face_keep]
-        kept_face_idx = np.where(face_keep)[0]
+            # Plot & save heatmap
+            plt.figure(figsize=(8, 8))
+            plt.imshow(diff_normalized, cmap='hot')
+            plt.axis('off')
+            plt.tight_layout()
+            plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
+            plt.close()
 
-        # print("faces.shape:", faces.shape)
-        # print("kept_faces.shape:", kept_faces.shape)
-        # print("kept_faces:", kept_faces)
-        # print("kept_face_idx:", kept_face_idx)
-
-        # triangle_filter = np.zeros(faces.shape[0], dtype=bool)
-        triangle_filter[kept_face_idx] = 1
+        # Compute per-pixel absolute difference map
+        dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # shape [H, W]
+        print(dist_map.shape, dist_map.dtype, dist_map.min(), dist_map.max(), dist_map.mean())
         
-        # # Remove unreferenced vertices
-        # unique_verts_idx, new_faces_idx = np.unique(kept_faces.flatten(), return_inverse=True)
-        # kept_verts = verts[unique_verts_idx]
-        # new_faces = new_faces_idx.reshape(kept_faces.shape)
-
-        # # ------------------ Export with Open3D ------------------
-        # mesh_o3d = o3d.geometry.TriangleMesh()
-        # mesh_o3d.vertices = o3d.utility.Vector3dVector(kept_verts)
-        # mesh_o3d.triangles = o3d.utility.Vector3iVector(new_faces)
-        # mesh_o3d.compute_vertex_normals()
-        # o3d.io.write_triangle_mesh("../r_0.obj", mesh_o3d)
-        # print(f"[✔] Exported filtered mesh with {len(kept_verts)} verts and {len(new_faces)} faces to ../r_0.obj")
+        # Threshold to create distortion mask
+        threshold = 0.5
+        mask = (dist_map > threshold).astype(np.uint8)  # 1 for high distortion
+        mask_rgb = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * 255
+        
+        # Save mask
+        cv2.imwrite(f"../test/r_{i}.png", mask_rgb)
+        
+        break
     
-    print("Saving triangle filter...")
-    print(triangle_filter.shape, triangle_filter.sum())
-    np.save("../triangle_filter.npy", triangle_filter)
+    #     # Render tm2p3d_mesh with PyTorch3D
+    #     tm2p3d_mesh_color, tm2p3d_mesh_depth, tm2p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, tm2p3d_mesh,
+    #                                                         image_height=image_height, image_width=image_width,
+    #                                                         faces_per_pixel=faces_per_pixel,
+    #                                                         device=device)
+        
+    #     face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0]
+    #     # print(rgb_img.shape, face_idx_map.shape)
+        
+    #     # mesh_scene = trimesh.load(f'/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj', force='mesh')
+    #     # mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
+    #     #     angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
+    #     # ))
+        
+    #     # ------------------ Load mask ------------------
+    #     mask_img = Image.open(f"/mnt/data1/syjintw/NEU/dataset/hotdog/distortion_thres0.05/r_{i}.png").convert("L")  # grayscale
+    #     mask = np.array(mask_img)
+    #     mask_bool = mask > 128  # white = keep (True), black = drop (False)
+    #     H, W = mask_bool.shape
+        
+    #     # ------------------ Face index per pixel ------------------
+    #     face_idx_map = fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W)
+    #     # face_idx_map = -1 means background
+        
+    #     # ------------------ Determine which faces to keep ------------------
+    #     face_keep = np.zeros(p3d_mesh.num_faces_per_mesh()[0].item(), dtype=bool)
+    #     valid_mask = face_idx_map >= 0
+    #     # faces that map to white pixels
+    #     white_faces = face_idx_map[valid_mask & mask_bool]
+    #     face_keep[np.unique(white_faces)] = True
+        
+    #     # ------------------ Extract mesh geometry ------------------
+    #     verts = p3d_mesh.verts_packed().cpu().numpy()
+    #     faces = p3d_mesh.faces_packed().cpu().numpy()
 
-def test():
-    # Trimesh
-    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
-    tm_faces = tm_mesh.faces  # (F, 3)
-    # tm_faces_sorted = np.sort(tm_faces, axis=1)  # sort each row (triangle)
+    #     kept_faces = faces[face_keep]
+    #     kept_face_idx = np.where(face_keep)[0]
+
+    #     # print("faces.shape:", faces.shape)
+    #     # print("kept_faces.shape:", kept_faces.shape)
+    #     # print("kept_faces:", kept_faces)
+    #     # print("kept_face_idx:", kept_face_idx)
+
+    #     # triangle_filter = np.zeros(faces.shape[0], dtype=bool)
+    #     triangle_filter[kept_face_idx] = 1
+        
+    #     # # Remove unreferenced vertices
+    #     # unique_verts_idx, new_faces_idx = np.unique(kept_faces.flatten(), return_inverse=True)
+    #     # kept_verts = verts[unique_verts_idx]
+    #     # new_faces = new_faces_idx.reshape(kept_faces.shape)
+
+    #     # # ------------------ Export with Open3D ------------------
+    #     # mesh_o3d = o3d.geometry.TriangleMesh()
+    #     # mesh_o3d.vertices = o3d.utility.Vector3dVector(kept_verts)
+    #     # mesh_o3d.triangles = o3d.utility.Vector3iVector(new_faces)
+    #     # mesh_o3d.compute_vertex_normals()
+    #     # o3d.io.write_triangle_mesh("../r_0.obj", mesh_o3d)
+    #     # print(f"[✔] Exported filtered mesh with {len(kept_verts)} verts and {len(new_faces)} faces to ../r_0.obj")
     
-    # PyTorch3D
-    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device="cuda")
-    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device="cuda")  # keep order!
-    p3d_mesh = Meshes(verts=[verts], faces=[faces])
-    # p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    # print("Saving triangle filter...")
+    # print(triangle_filter.shape, triangle_filter.sum())
+    # np.save("../triangle_filter.npy", triangle_filter)
 
-    # Access vertices and faces explicitly if needed:
-    p3d_verts = p3d_mesh.verts_list()[0]  # (V, 3)
-    p3d_faces = p3d_mesh.faces_list()[0].cpu().numpy()  # (F, 3)
-    # p3d_faces_sorted = np.sort(p3d_faces, axis=1)
-
-    print("Same number of faces?", tm_faces.shape[0] == p3d_faces.shape[0])
-    print("First 5 trimesh faces:\n", tm_faces[:5])
-    print("First 5 p3d faces:\n", p3d_faces[:5])
-    # print("First 5 trimesh faces:\n", tm_faces_sorted[:5])
-    # print("First 5 p3d faces:\n", p3d_faces_sorted[:5])
     
-    target = tm_faces[0]
-    exists = np.any(np.all(p3d_faces == target, axis=1))
-    # target = tm_faces_sorted[0]
-    # exists = np.any(np.all(p3d_faces_sorted == target, axis=1))
-    
-    print("Exists?", exists)
-
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
              debug_from, save_xyz):
-    # test()
-    # exit()
-    
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree)
@@ -268,8 +248,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
     
     # warmup(scene.getTrainCameras().copy())
-    # warmup_new(scene.getTrainCameras().copy(), textured_mesh)
-    # exit()
+    warmup(scene.getTrainCameras().copy(), textured_mesh)
+    exit()
     
     # >>>> [YC] 
     # Change diff-rasterization settings

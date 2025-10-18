@@ -68,5 +68,5 @@ def mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
     # ------------------------ Save depth pt for debugging ----------------------- #
     # torch.save(depth, "./bg_depth.pt")
     
-    return bg_color, bg_depth
+    return bg_color, bg_depth, fragments
     
