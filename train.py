@@ -268,8 +268,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
     
     # warmup(scene.getTrainCameras().copy())
-    warmup_new(scene.getTrainCameras().copy(), textured_mesh)
-    exit()
+    # warmup_new(scene.getTrainCameras().copy(), textured_mesh)
+    # exit()
     
     # >>>> [YC] 
     # Change diff-rasterization settings
