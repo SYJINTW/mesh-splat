@@ -44,6 +44,7 @@ def readNerfSyntheticMeshInfo(
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
     print("Reading Test Transforms")
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
+    
     print("Reading Mesh object")
     mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
     
@@ -85,11 +86,21 @@ def readNerfSyntheticMeshInfo(
 
     ply_path = os.path.join(path, "points3d.ply")
     print("ply_path:", ply_path)
+    
     # if not os.path.exists(ply_path):
     if True:
-        areas = trimesh.triangles.area(triangles.cpu().numpy())  # (N,) array
-        area_weights = areas / areas.mean()  # normalize around 1.0
-        num_splats_per_triangle = np.clip((area_weights * num_splats).astype(int), 0, 4)
+        
+        # Non-uniform splatting density based on triangle area
+        # areas = trimesh.triangles.area(triangles.cpu().numpy())  # (N,) array
+        # area_weights = areas / areas.mean()  # normalize around 1.0
+        # num_splats_per_triangle = np.clip((area_weights * num_splats).astype(int), 0, 4)
+        
+        # Uniform splatting density
+        num_splats_per_triangle = np.full(triangles.shape[0], 5, dtype=int)
+
+        loaded_filter = np.load("../triangle_filter.npy")
+        num_splats_per_triangle = num_splats_per_triangle * loaded_filter
+        
         print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
         
         # Since this data set has no colmap data, we start with random points
@@ -98,7 +109,9 @@ def readNerfSyntheticMeshInfo(
             f"Generating random point cloud ({num_pts})..."
         )
         
-        # >>>> [YC] Prepare UV
+        # ---------------------------------------------------------------------------- #
+        #                 Get initial Gaussian colors from texture map                 #
+        # ---------------------------------------------------------------------------- #
         face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
         H, W = texture_img.shape[:2]        
         
@@ -119,7 +132,6 @@ def readNerfSyntheticMeshInfo(
         print("tri_avg_colors:", tri_avg_colors.shape) # [YC] debug
         # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
         
-        
         # We create random points inside the bounds traingles
         xyz_list = []
         alpha_list = []
@@ -131,8 +143,8 @@ def readNerfSyntheticMeshInfo(
             alpha = alpha / alpha.sum(dim=1, keepdim=True)  # normalize to barycentric coords
 
             pts = (alpha[:, 0:1] * triangles[i, 0] +
-                   alpha[:, 1:2] * triangles[i, 1] +
-                   alpha[:, 2:3] * triangles[i, 2])
+                alpha[:, 1:2] * triangles[i, 1] +
+                alpha[:, 2:3] * triangles[i, 2])
 
             color = np.repeat(tri_avg_colors[i].reshape(1, 3), n, axis=0)  # (num_pts, 3)
             # print(color.shape) # [YC] debug

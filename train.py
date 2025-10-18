@@ -63,6 +63,9 @@ from pytorch3d.renderer import (
 )
 from scene.cameras import convert_camera_from_gs_to_pytorch3d
 from pytorch3d.renderer.blending import BlendParams
+import trimesh
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import TexturesVertex
 
 SCENE_NAME = "hotdog"
 check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
@@ -104,9 +107,154 @@ def warmup(viewpoint_cameras):
         
         image_pil = TF.to_pil_image(image_color.cpu())   # Convert tensor → PIL Image
         image_pil.save(f"./warmup/{idx}.png")
+
+def warmup_new(viewpoint_cameras, p3d_mesh):
+    """
+    Render with mesh
+    """
+    # Trimesh
+    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
+    tm_faces = tm_mesh.faces  # (F, 3)
+    # tm_faces_sorted = np.sort(tm_faces, axis=1)  # sort each row (triangle)
     
+    # PyTorch3D
+    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device="cuda")
+    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device="cuda")  # keep order!
+    verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
+    textures = TexturesVertex(verts_features=verts_rgb)
+    p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
+    
+    image_height = 800
+    image_width = 800
+    faces_per_pixel = 1
+    
+    triangle_filter = np.zeros(faces.shape[0], dtype=bool)
+    
+    filters = []
+    for i in range(len(viewpoint_cameras)):
+        p3d_cameras = convert_camera_from_gs_to_pytorch3d(
+            [viewpoint_cameras[i]]
+        )
+        
+        mesh_raster_settings = RasterizationSettings(
+            image_size=(image_height, image_width),
+            blur_radius=0.0, 
+            faces_per_pixel=faces_per_pixel,
+            # max_faces_per_bin=max_faces_per_bin
+        )
+        lights = AmbientLights(device="cuda")
+        
+        rasterizer = MeshRasterizer(
+            cameras=p3d_cameras[0], 
+            raster_settings=mesh_raster_settings,
+        )
+        
+        fragments = rasterizer(p3d_mesh)
+        
+        renderer = MeshRenderer(
+            rasterizer=rasterizer,
+            shader=SoftPhongShader(
+                device="cuda", 
+                cameras=p3d_cameras[0],
+                lights=lights,
+                # blend_params=BlendParams(background_color=(0.0, 0.0, 0.0)),
+                blend_params=BlendParams(background_color=(1.0, 1.0, 1.0)),
+            )
+        )
+        
+        rgb_img = renderer(p3d_mesh, cameras=p3d_cameras)[0, ..., :3]
+        face_idx_map = fragments.pix_to_face[0, ..., 0]
+        # print(rgb_img.shape, face_idx_map.shape)
+        
+        # mesh_scene = trimesh.load(f'/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj', force='mesh')
+        # mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
+        #     angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
+        # ))
+        
+        # ------------------ Load mask ------------------
+        mask_img = Image.open(f"/mnt/data1/syjintw/NEU/dataset/hotdog/distortion_thres0.05/r_{i}.png").convert("L")  # grayscale
+        mask = np.array(mask_img)
+        mask_bool = mask > 128  # white = keep (True), black = drop (False)
+        H, W = mask_bool.shape
+        
+        # ------------------ Face index per pixel ------------------
+        face_idx_map = fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W)
+        # face_idx_map = -1 means background
+        
+        # ------------------ Determine which faces to keep ------------------
+        face_keep = np.zeros(p3d_mesh.num_faces_per_mesh()[0].item(), dtype=bool)
+        valid_mask = face_idx_map >= 0
+        # faces that map to white pixels
+        white_faces = face_idx_map[valid_mask & mask_bool]
+        face_keep[np.unique(white_faces)] = True
+        
+        # ------------------ Extract mesh geometry ------------------
+        verts = p3d_mesh.verts_packed().cpu().numpy()
+        faces = p3d_mesh.faces_packed().cpu().numpy()
+
+        kept_faces = faces[face_keep]
+        kept_face_idx = np.where(face_keep)[0]
+
+        # print("faces.shape:", faces.shape)
+        # print("kept_faces.shape:", kept_faces.shape)
+        # print("kept_faces:", kept_faces)
+        # print("kept_face_idx:", kept_face_idx)
+
+        # triangle_filter = np.zeros(faces.shape[0], dtype=bool)
+        triangle_filter[kept_face_idx] = 1
+        
+        # # Remove unreferenced vertices
+        # unique_verts_idx, new_faces_idx = np.unique(kept_faces.flatten(), return_inverse=True)
+        # kept_verts = verts[unique_verts_idx]
+        # new_faces = new_faces_idx.reshape(kept_faces.shape)
+
+        # # ------------------ Export with Open3D ------------------
+        # mesh_o3d = o3d.geometry.TriangleMesh()
+        # mesh_o3d.vertices = o3d.utility.Vector3dVector(kept_verts)
+        # mesh_o3d.triangles = o3d.utility.Vector3iVector(new_faces)
+        # mesh_o3d.compute_vertex_normals()
+        # o3d.io.write_triangle_mesh("../r_0.obj", mesh_o3d)
+        # print(f"[✔] Exported filtered mesh with {len(kept_verts)} verts and {len(new_faces)} faces to ../r_0.obj")
+    
+    print("Saving triangle filter...")
+    print(triangle_filter.shape, triangle_filter.sum())
+    np.save("../triangle_filter.npy", triangle_filter)
+
+def test():
+    # Trimesh
+    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
+    tm_faces = tm_mesh.faces  # (F, 3)
+    # tm_faces_sorted = np.sort(tm_faces, axis=1)  # sort each row (triangle)
+    
+    # PyTorch3D
+    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device="cuda")
+    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device="cuda")  # keep order!
+    p3d_mesh = Meshes(verts=[verts], faces=[faces])
+    # p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+
+    # Access vertices and faces explicitly if needed:
+    p3d_verts = p3d_mesh.verts_list()[0]  # (V, 3)
+    p3d_faces = p3d_mesh.faces_list()[0].cpu().numpy()  # (F, 3)
+    # p3d_faces_sorted = np.sort(p3d_faces, axis=1)
+
+    print("Same number of faces?", tm_faces.shape[0] == p3d_faces.shape[0])
+    print("First 5 trimesh faces:\n", tm_faces[:5])
+    print("First 5 p3d faces:\n", p3d_faces[:5])
+    # print("First 5 trimesh faces:\n", tm_faces_sorted[:5])
+    # print("First 5 p3d faces:\n", p3d_faces_sorted[:5])
+    
+    target = tm_faces[0]
+    exists = np.any(np.all(p3d_faces == target, axis=1))
+    # target = tm_faces_sorted[0]
+    # exists = np.any(np.all(p3d_faces_sorted == target, axis=1))
+    
+    print("Exists?", exists)
+
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
              debug_from, save_xyz):
+    # test()
+    # exit()
+    
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree)
@@ -118,7 +266,10 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gaussians.restore(model_params, opt)
 
     textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    
     # warmup(scene.getTrainCameras().copy())
+    warmup_new(scene.getTrainCameras().copy(), textured_mesh)
+    exit()
     
     # >>>> [YC] 
     # Change diff-rasterization settings
@@ -266,7 +417,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 1 == 0:
+        if iteration % 100 == 0:
             img_to_save = image.detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
             img_pil.save(check_path/f"{iteration}.png")

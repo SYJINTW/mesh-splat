@@ -28,7 +28,7 @@ from torchvision.transforms import functional as TF, InterpolationMode
 from scene.cameras import convert_camera_from_gs_to_pytorch3d
 from PIL import Image
 
-import time
+from mesh_renderer_pytorch3d import mesh_renderer_pytorch3d
 
 def transform_vertices_function(vertices, c=1):
     vertices = vertices[:, [0, 2, 1]]
@@ -48,7 +48,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     
     # >>>> [YC] To support real time mesh rendering as background
     if textured_mesh is not None:
-        start_time = time.time()
         image_height = 800
         image_width = 800
         faces_per_pixel = 1
@@ -136,7 +135,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         # # Convert to PIL Image and save as PNG
         # depth_pil.save("./bg_depth.png")
         
-        end_time = time.time()
         # print(f"Mesh rendering time: {end_time - start_time:.4f} seconds")
     # <<<< [YC]
         

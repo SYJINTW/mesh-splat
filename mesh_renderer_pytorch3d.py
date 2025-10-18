@@ -1,50 +1,72 @@
 import torch
-from pytorch3d.utils import ico_sphere
-from pytorch3d.structures import Meshes
 from pytorch3d.renderer import (
-    FoVPerspectiveCameras,
-    RasterizationSettings,
-    MeshRenderer,
-    MeshRasterizer,
+    AmbientLights,
+    RasterizationSettings, 
+    MeshRenderer, 
+    MeshRasterizer,  
     SoftPhongShader,
-    PointLights,
-    TexturesVertex,
-)
-import imageio
-import numpy as np
+    )
+from pytorch3d.renderer.blending import BlendParams
+from scene.cameras import convert_camera_from_gs_to_pytorch3d
 
-# 使用 CUDA 如果可用
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print("Using device:", device)
-
-# 建立球體 Mesh
-mesh = ico_sphere(level=1, device=device)
-
-# 建立每個 vertex 的顏色為白色 (R=1, G=1, B=1)
-verts_rgb = torch.ones_like(mesh.verts_padded())  # (B, V, 3)
-textures = TexturesVertex(verts_features=verts_rgb.to(device))
-mesh.textures = textures
-
-# 相機、光源、光柵化設定
-cameras = FoVPerspectiveCameras(device=device)
-raster_settings = RasterizationSettings(image_size=256)
-lights = PointLights(device=device)
-
-# 建立渲染器
-renderer = MeshRenderer(
-    rasterizer=MeshRasterizer(cameras=cameras, raster_settings=raster_settings),
-    shader=SoftPhongShader(device=device, cameras=cameras, lights=lights)
-)
-
-# 執行渲染
-images = renderer(mesh)
-
-# 顯示 shape
-print("Rendered image shape:", images.shape)  # torch.Size([1, 256, 256, 3])
-
-# 取得 RGB (前3個通道)
-image = images[0, ..., :3].cpu().numpy()  # (256, 256, 3)
-
-# 選擇是否需要考慮透明度：通常不需要，直接取 RGB 即可
-image = (image * 255).astype(np.uint8)
-imageio.imwrite("rendered_sphere.png", image)
+def mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                            image_height=800, image_width=800,
+                            background_color=(1.0, 1.0, 1.0),
+                            faces_per_pixel=1, device="cuda"):
+    
+    p3d_cameras = convert_camera_from_gs_to_pytorch3d(
+        [viewpoint_camera]
+    )
+    
+    mesh_raster_settings = RasterizationSettings(
+        image_size=(image_height, image_width),
+        blur_radius=0.0, 
+        faces_per_pixel=faces_per_pixel,
+    )
+    lights = AmbientLights(device=device)
+    rasterizer = MeshRasterizer(
+        cameras=p3d_cameras[0], 
+        raster_settings=mesh_raster_settings,
+    )
+    renderer = MeshRenderer(
+        rasterizer=rasterizer,
+        shader=SoftPhongShader(
+            device=device, 
+            cameras=p3d_cameras[0],
+            lights=lights,
+            blend_params=BlendParams(background_color=background_color),
+        )
+    )
+    
+    # ---------------------------------------------------------------------------- #
+    #                                 Render Color                                 #
+    # ---------------------------------------------------------------------------- # 
+    with torch.no_grad():
+        rgb_img = renderer(textured_mesh, cameras=p3d_cameras)[0, ..., :3]
+    
+    bg_color = rgb_img.permute(2, 0, 1).contiguous()
+    
+    # ------------------------- Save color for debugging ------------------------- #
+    # bg_pil = TF.to_pil_image(bg_color.cpu())   # Convert tensor → PIL Image
+    # bg_pil.save("./bg_color.png")
+    
+    # ---------------------------------------------------------------------------- #
+    #                                 Render Depth                                 #
+    # ---------------------------------------------------------------------------- #
+    # Get fragments from rasterizer
+    fragments = rasterizer(textured_mesh, cameras=p3d_cameras)
+    
+    # Nearest surface depth in NDC space
+    depth = fragments.zbuf[0, ..., 0]  # (H, W)
+    
+    # Mask out pixels that didn’t hit any face
+    mask = fragments.pix_to_face[0, ..., 0] >= 0
+    depth = depth.masked_fill(~mask, -1)
+    
+    bg_depth = depth.unsqueeze(0)
+    
+    # ------------------------ Save depth pt for debugging ----------------------- #
+    # torch.save(depth, "./bg_depth.pt")
+    
+    return bg_color, bg_depth
+    
