@@ -45,11 +45,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     
     Background tensor (bg_color) must be on GPU!
     """
+    # print(type(bg_color), bg_color.shape, type(bg_depth), bg_depth.shape)
     
     # Render background with mesh renderer if textured mesh is provided
     if textured_mesh is not None:
-        bg_color, bg_depth = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh)
-        
+        bg_color, bg_depth, fragments = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh)
+        # print(type(bg_color), bg_color.shape, type(bg_depth), bg_depth.shape)
+            
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     try:
@@ -58,7 +60,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         pass
     
     # Set up rasterization configuration
-    # print("viewpoint_camera.FoVx:", viewpoint_camera.FoVx)
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
     viewpoint_camera.camera_center = viewpoint_camera.camera_center
@@ -79,15 +80,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
         # antialiasing=pipe.antialiasing
     )
 
-    # # For debugging:
-    # print("tanfovx:", tanfovx, "tanfovy:", tanfovy)
-    # print("Camera center:", viewpoint_camera.camera_center)
-    # print("scaling_modifier:", scaling_modifier)
-    
-    # print("viewpoint_camera.world_view_transform:", viewpoint_camera.world_view_transform)
-    # print("viewpoint_camera.full_proj_transform:", viewpoint_camera.full_proj_transform)
-    
-    # print("GaussianRasterizer:init")
     rasterizer = GaussianRasterizer(raster_settings=raster_settings) # __init__
     
     _xyz = pc.get_xyz
@@ -134,7 +126,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     #     rotations = rotations,
     #     cov3D_precomp = cov3D_precomp) # forward
 
-    # print("rasterizer")
     rendered_image, radii = rasterizer(
         means3D = means3D,
         means2D = means2D,
@@ -151,5 +142,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
             "radii": radii,
+            "bg_color": bg_color, # [YC] add
             # "depth": depth_image
             }

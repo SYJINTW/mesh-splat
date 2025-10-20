@@ -41,8 +41,7 @@ def mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
     # ---------------------------------------------------------------------------- #
     #                                 Render Color                                 #
     # ---------------------------------------------------------------------------- # 
-    with torch.no_grad():
-        rgb_img = renderer(textured_mesh, cameras=p3d_cameras)[0, ..., :3]
+    rgb_img = renderer(textured_mesh, cameras=p3d_cameras)[0, ..., :3]
     
     bg_color = rgb_img.permute(2, 0, 1).contiguous()
     

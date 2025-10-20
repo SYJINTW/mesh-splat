@@ -11,6 +11,7 @@
 
 # from pytorch3d.io import load_objs_as_meshes
 
+from itertools import count
 import os
 import torch
 from random import randint
@@ -70,6 +71,7 @@ from pytorch3d.renderer import TexturesVertex
 from mesh_renderer_pytorch3d import mesh_renderer_pytorch3d
 import cv2
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 SCENE_NAME = "hotdog"
 check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
@@ -105,7 +107,9 @@ def warmup(viewpoint_cameras, p3d_mesh,
         heatmap_output_dir.mkdir(parents=True, exist_ok=True)
         mesh_bg_output_dir = Path(f"../mesh_bg")
         mesh_bg_output_dir.mkdir(parents=True, exist_ok=True)
-    
+        filtered_obj_output_dir = Path(f"../filtered_obj")
+        filtered_obj_output_dir.mkdir(parents=True, exist_ok=True)
+
     # Load mesh with Trimesh
     tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
     
@@ -119,7 +123,8 @@ def warmup(viewpoint_cameras, p3d_mesh,
     # Load mesh with PyTorch3D
     p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to(device)
 
-    triangle_filter = np.zeros(faces.shape[0], dtype=bool)
+    num_faces = faces.shape[0]
+    dist_map_all = np.zeros(num_faces, dtype=np.float32)
     for i, viewpoint_camera in enumerate(viewpoint_cameras):
         # Load ground truth image
         gt_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_camera.image_name}.png"
@@ -138,99 +143,93 @@ def warmup(viewpoint_cameras, p3d_mesh,
         )
         p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
         
-        if debugging:
-            # Transfer p3d_mesh_color to PIL Image for debugging
-            p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
-            p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
+        # # Save rendered mesh background and heatmap for debugging
+        # if debugging:
+        #     # Transfer p3d_mesh_color to PIL Image for debugging
+        #     p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
+        #     p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
             
-            # Compute heatmap (L2 difference)
-            diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
-            diff_normalized = diff / np.max(diff)  # normalize to [0,1]
+        #     # Compute heatmap (L2 difference)
+        #     diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
+        #     diff_normalized = diff / np.max(diff)  # normalize to [0,1]
 
-            # Plot & save heatmap
-            plt.figure(figsize=(8, 8))
-            plt.imshow(diff_normalized, cmap='hot')
-            plt.axis('off')
-            plt.tight_layout()
-            plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
-            plt.close()
-
+        #     # Plot & save heatmap
+        #     plt.figure(figsize=(8, 8))
+        #     plt.imshow(diff_normalized, cmap='hot')
+        #     plt.axis('off')
+        #     plt.tight_layout()
+        #     plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
+        #     plt.close()
+        
         # Compute per-pixel absolute difference map
-        dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # shape [H, W]
-        print(dist_map.shape, dist_map.dtype, dist_map.min(), dist_map.max(), dist_map.mean())
+        dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # shape [H, W]. It will be in [0, 1]
+        # print("dist_map:", dist_map.shape, dist_map.dtype, dist_map.min(), dist_map.max(), dist_map.mean())
         
-        # Threshold to create distortion mask
-        threshold = 0.5
-        mask = (dist_map > threshold).astype(np.uint8)  # 1 for high distortion
-        mask_rgb = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * 255
+        # Render tm2p3d_mesh with PyTorch3D
+        tm2p3d_mesh_color, tm2p3d_mesh_depth, tm2p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, tm2p3d_mesh,
+                                                                                        image_height=image_height, image_width=image_width,
+                                                                                        faces_per_pixel=faces_per_pixel,
+                                                                                        device=device)
         
-        # Save mask
-        cv2.imwrite(f"../test/r_{i}.png", mask_rgb)
+        # Face index per pixel
+        face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W). face_idx_map = -1 means background
+        # print("face_idx_map:", face_idx_map.shape, face_idx_map.dtype, face_idx_map.min(), face_idx_map.max(), face_idx_map.mean())
         
-        break
+        # Flatten arrays
+        face_idx_flat = face_idx_map.flatten()
+        dist_flat = dist_map.flatten()
+        
+        # Filter out invalid faces (e.g., -1)
+        valid_mask = face_idx_flat >= 0
+        face_idx_flat = face_idx_flat[valid_mask]
+        dist_flat = dist_flat[valid_mask]
+        
+        # Compute sum and counts per face
+        sum_dist = np.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
+        count = np.bincount(face_idx_flat, minlength=num_faces)
+
+        # Avoid divide-by-zero
+        mean_dist = np.zeros(num_faces, dtype=np.float32)
+        mask = count > 0
+        mean_dist[mask] = sum_dist[mask] / count[mask]
+        
+        # Update overall distortion map
+        dist_map_all += mean_dist
     
-    #     # Render tm2p3d_mesh with PyTorch3D
-    #     tm2p3d_mesh_color, tm2p3d_mesh_depth, tm2p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, tm2p3d_mesh,
-    #                                                         image_height=image_height, image_width=image_width,
-    #                                                         faces_per_pixel=faces_per_pixel,
-    #                                                         device=device)
+    if debugging:
+        dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.ptp() + 1e-8)
+        cmap = cm.get_cmap('jet')
+        colors = cmap(dist_norm)[:, :3]  # (num_faces, 3), RGB in [0,1]
         
-    #     face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0]
-    #     # print(rgb_img.shape, face_idx_map.shape)
-        
-    #     # mesh_scene = trimesh.load(f'/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj', force='mesh')
-    #     # mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
-    #     #     angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
-    #     # ))
-        
-    #     # ------------------ Load mask ------------------
-    #     mask_img = Image.open(f"/mnt/data1/syjintw/NEU/dataset/hotdog/distortion_thres0.05/r_{i}.png").convert("L")  # grayscale
-    #     mask = np.array(mask_img)
-    #     mask_bool = mask > 128  # white = keep (True), black = drop (False)
-    #     H, W = mask_bool.shape
-        
-    #     # ------------------ Face index per pixel ------------------
-    #     face_idx_map = fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W)
-    #     # face_idx_map = -1 means background
-        
-    #     # ------------------ Determine which faces to keep ------------------
-    #     face_keep = np.zeros(p3d_mesh.num_faces_per_mesh()[0].item(), dtype=bool)
-    #     valid_mask = face_idx_map >= 0
-    #     # faces that map to white pixels
-    #     white_faces = face_idx_map[valid_mask & mask_bool]
-    #     face_keep[np.unique(white_faces)] = True
-        
-    #     # ------------------ Extract mesh geometry ------------------
-    #     verts = p3d_mesh.verts_packed().cpu().numpy()
-    #     faces = p3d_mesh.faces_packed().cpu().numpy()
+        # Compute per-vertex color by averaging colors of adjacent faces
+        vertex_colors = np.zeros((len(tm_mesh.vertices), 3))
+        for f_id, verts in enumerate(tm_mesh.faces):
+            vertex_colors[verts] += colors[f_id]
+            
+        counts = np.bincount(tm_mesh.faces.flatten(), minlength=len(tm_mesh.vertices))
+        vertex_colors /= np.maximum(counts[:, None], 1e-8)
 
-    #     kept_faces = faces[face_keep]
-    #     kept_face_idx = np.where(face_keep)[0]
+        # Build Open3D point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(tm_mesh.vertices)
+        pcd.colors = o3d.utility.Vector3dVector(vertex_colors)
 
-    #     # print("faces.shape:", faces.shape)
-    #     # print("kept_faces.shape:", kept_faces.shape)
-    #     # print("kept_faces:", kept_faces)
-    #     # print("kept_face_idx:", kept_face_idx)
-
-    #     # triangle_filter = np.zeros(faces.shape[0], dtype=bool)
-    #     triangle_filter[kept_face_idx] = 1
-        
-    #     # # Remove unreferenced vertices
-    #     # unique_verts_idx, new_faces_idx = np.unique(kept_faces.flatten(), return_inverse=True)
-    #     # kept_verts = verts[unique_verts_idx]
-    #     # new_faces = new_faces_idx.reshape(kept_faces.shape)
-
-    #     # # ------------------ Export with Open3D ------------------
-    #     # mesh_o3d = o3d.geometry.TriangleMesh()
-    #     # mesh_o3d.vertices = o3d.utility.Vector3dVector(kept_verts)
-    #     # mesh_o3d.triangles = o3d.utility.Vector3iVector(new_faces)
-    #     # mesh_o3d.compute_vertex_normals()
-    #     # o3d.io.write_triangle_mesh("../r_0.obj", mesh_o3d)
-    #     # print(f"[✔] Exported filtered mesh with {len(kept_verts)} verts and {len(new_faces)} faces to ../r_0.obj")
+        # Save as PLY (works perfectly in MeshLab)
+        o3d.io.write_point_cloud("../distortion_heatmap.ply", pcd)
     
-    # print("Saving triangle filter...")
-    # print(triangle_filter.shape, triangle_filter.sum())
-    # np.save("../triangle_filter.npy", triangle_filter)
+    # Decide triangle filter based on distortion map
+    print("dist_map_all:", dist_map_all.shape, dist_map_all.dtype, dist_map_all.min(), dist_map_all.max(), dist_map_all.mean())
+    
+    # Normalize distortion map to int in [0,5] based on the distortion values
+    # Normalize to [0, 1]
+    dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + 1e-8)
+    
+    # Scale to [0, 5] and convert to int
+    dist_int = np.round(dist_norm * 5).astype(np.int32)
+    print("dist_int:", dist_int.shape, dist_int.dtype, dist_int.min(), dist_int.max(), dist_int.mean())
+
+    print("Saving number of Gaussians in each triangle...")
+    np.save("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy", dist_int)
 
     
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
@@ -247,28 +246,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
 
     textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
     
-    # warmup(scene.getTrainCameras().copy())
-    warmup(scene.getTrainCameras().copy(), textured_mesh)
-    exit()
-    
-    # >>>> [YC] 
-    # Change diff-rasterization settings
-
-    # bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    # background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-    
-    # # Load static image background
-    # background_image_path = "/home/syjintw/Desktop/NEU/gaussian-mesh-splatting/output_render_no_light.png"
-    # img = Image.open(background_image_path).convert("RGB")
-    # viewpoint_camera_height = 800
-    # viewpoint_camera_width = 800
-    # # === 1. Use PIL to load images ===
-    # img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
-    # # === 2. Change image to Tensor ===
-    # transform = T.Compose([
-    #     T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
-    # ])
-    # background = transform(img).to(torch.float32).cuda()
+    # warmup(scene.getTrainCameras().copy(), textured_mesh)
+    # exit()
     
     # Not sure why need to get background in this part
     # --------------------------- Load background image -------------------------- #
@@ -287,6 +266,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     background_depth = torch.load(background_depth_pt_path).unsqueeze(0)
     # <<<< [YC]
 
+    # ---------------------------------------------------------------------------- #
+    #                              Start Training Loop                             #
+    # ---------------------------------------------------------------------------- #
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
 
@@ -332,96 +314,93 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         viewpoint_cam = viewpoint_stack.pop(rand_cam_id)
         # print(viewpoint_cam.uid, viewpoint_cam.image_name)
         
-        # >>>> [YC] 
-        # ------------------------------ Mesh background ----------------------------- #
-        background_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
-        img = Image.open(background_image_path).convert("RGB")
+        # ---------------------------------------------------------------------------- #
+        #                                Load Background                               #
+        # ---------------------------------------------------------------------------- #
         viewpoint_camera_height = 800
         viewpoint_camera_width = 800
-        img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
-
-        if iteration % 100 == 0:
-            output_path = "output.png"
-            img.save(output_path, format="PNG")
-
+        
         transform = T.Compose([
             T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
         ])
-        background = transform(img).to(torch.float32).cuda()
+        
+        # ------------------------------ Mesh background ----------------------------- #
+        bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
+        img = Image.open(bg_image_path).convert("RGB")
+        img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
+        bg = transform(img).to(torch.float32).cuda()
         
         # ------------------------------ Mesh depth background ----------------------------- #
-        background_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
-        background_depth = torch.load(background_depth_pt_path)
+        bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
+        bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
 
-        # print("background_depth.shape:", background_depth.shape)
-        # print("background_depth[:][350][350]:", background_depth[0][350][350])
-        # print("background_depth[:][400][400]:", background_depth[0][400][400])
-        
-        # bg = torch.rand((3), device="cuda") if opt.random_background else background
-        # bg_depth = torch.rand((3), device="cuda") if opt.random_background else background_depth
-        bg = background
-        bg_depth = background_depth.unsqueeze(0).to("cuda")
-        
         # ------------------------------ Pure background ----------------------------- #
-        viewpoint_camera_height = 800
-        viewpoint_camera_width = 800
-        
         pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-        # pure_bg_template = [0, 0, 0]
         pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda")
+        
+        # --------------------- Pure depth background (all zeros) -------------------- #
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
-        # <<<< [YC] 
-    
+        
+        
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
         # >>>> [YC]
         # ------------- Render mesh background and mesh depth background ------------- #
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth,
-                            textured_mesh=textured_mesh)
-        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, pure_bg_depth)
+        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth,
+        #                     textured_mesh=textured_mesh)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
         image = render_pkg["render"]
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        
-        # ------------- Render pure background and fake depth background ------------- #
-        render_pure_bg = render(viewpoint_cam, gaussians, pipe, pure_bg, pure_bg_depth)
-        image_gs = render_pure_bg["render"]
-        # viewspace_point_tensor, visibility_filter, radii = render_pure_bg["viewspace_points"], render_pure_bg["visibility_filter"], render_pure_bg["radii"]
-
-        # ------------- Render pure mesh background and mesh depth background ------------- #
-        render_pure_mesh_bg = render(viewpoint_cam, gaussians, pipe, pure_bg, bg_depth)
-        image_gs_mesh = render_pure_mesh_bg["render"]
         
         # -------------------------- Load ground truth image ------------------------- #
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
         if iteration % 100 == 0:
+            img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
+            img_pil = TF.to_pil_image(img_to_save)
+            img_pil.save(check_path/f"{iteration}_mesh.png")
+            
+            # ------------- Render mesh background and mesh depth background ------------- #
             img_to_save = image.detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}.png")
+            img_pil.save(check_path/f"{iteration}_gs_mesh_with_depth.png")
             
-            gs_img_to_save = image_gs.detach().clamp(0, 1).cpu()
-            gs_img_pil = TF.to_pil_image(gs_img_to_save)
-            gs_img_pil.save(check_path/f"{iteration}_gs.png")
+            # ------------- Render mesh background and fake depth background ------------- #
+            render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, bg, pure_bg_depth)
+            image_gs_mesh_wo_depth = render_pure_with_depth["render"]
+
+            img_to_save = image_gs_mesh_wo_depth.detach().clamp(0, 1).cpu()
+            img_pil = TF.to_pil_image(img_to_save)
+            img_pil.save(check_path/f"{iteration}_gs_mesh_wo_depth.png")
+
+            # ------------- Render pure background and mesh depth background ------------- #
+            render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, pure_bg, bg_depth)
+            image_gs_pure_with_depth = render_pure_with_depth["render"]
             
-            gs_mesh_img_to_save = image_gs_mesh.detach().clamp(0, 1).cpu()
-            gs_mesh_img_pil = TF.to_pil_image(gs_mesh_img_to_save)
-            gs_mesh_img_pil.save(check_path/f"{iteration}_gs_mesh.png")
+            img_to_save = image_gs_pure_with_depth.detach().clamp(0, 1).cpu()
+            img_pil = TF.to_pil_image(img_to_save)
+            img_pil.save(check_path/f"{iteration}_gs_pure_with_depth.png")
             
+            # ------------- Render pure background and fake depth background ------------- #
+            render_pure_wo_depth = render(viewpoint_cam, gaussians, pipe, pure_bg, pure_bg_depth)
+            image_gs_pure_wo_depth = render_pure_wo_depth["render"]
+            
+            img_to_save = image_gs_pure_wo_depth.detach().clamp(0, 1).cpu()
+            img_pil = TF.to_pil_image(img_to_save)
+            img_pil.save(check_path/f"{iteration}_gs_pure_wo_depth.png")
+            
+            # ---------------------------- Ground truth image ---------------------------- #
             gt_img_to_save = gt_image.detach().clamp(0, 1).cpu()
             gt_img_pil = TF.to_pil_image(gt_img_to_save)
             gt_img_pil.save(check_path/f"{iteration}_gt.png")
-
         # <<<< [YC]
         
-        # Loss
-        # Ll1 = l1_loss(image, gt_image)
-        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        
+        # Compute loss and backpropagate
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image_gs, gt_image))
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         
         # # Brutally adjust loss, but keeping the backward information
         # Ll1 = 0.0

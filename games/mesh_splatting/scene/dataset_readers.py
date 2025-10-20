@@ -27,6 +27,8 @@ from scene.dataset_readers import (
 )
 from utils.sh_utils import SH2RGB
 
+from pathlib import Path
+
 softmax = torch.nn.Softmax(dim=2)
 
 
@@ -96,10 +98,18 @@ def readNerfSyntheticMeshInfo(
         # num_splats_per_triangle = np.clip((area_weights * num_splats).astype(int), 0, 4)
         
         # Uniform splatting density
-        num_splats_per_triangle = np.full(triangles.shape[0], 5, dtype=int)
-
-        loaded_filter = np.load("../triangle_filter.npy")
-        num_splats_per_triangle = num_splats_per_triangle * loaded_filter
+        num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
+        print("num_splats_per_triangle shape:", num_splats_per_triangle.shape)
+        print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+        
+        filter_path = Path("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy")
+        if filter_path.exists(): 
+            print("Loading splat filter from:", filter_path)
+            loaded_filter = np.load(filter_path)
+            print("loaded_filter shape:", loaded_filter.shape)
+            print("Max and min:", loaded_filter.max(), loaded_filter.min())
+            num_splats_per_triangle = num_splats_per_triangle * loaded_filter
+            print("Adjusted num_splats_per_triangle shape:", num_splats_per_triangle.shape)
         
         print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
         
@@ -176,6 +186,8 @@ def readNerfSyntheticMeshInfo(
             tri_indices.append(torch.full((n,), i, dtype=torch.long))
         
         tri_indices = torch.cat(tri_indices, dim=0)
+        
+        
         
         # # >>>> [YC] Prepare UV
         # face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
