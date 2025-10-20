@@ -1,6 +1,67 @@
-# Mesh-Splat
+# GaMeS
+Joanna Waczyńska*, Piotr Borycki*, Sławomir Tadeja, Jacek Tabor, Przemysław Spurek
+(* indicates equal contribution)<br>
 
-This repository is based on [offical code](https://waczjoan.github.io/gaussian-mesh-splatting/) from ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).
+This repository contains the official authors implementation associated 
+with the paper ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).
+Check also [project page](https://waczjoan.github.io/gaussian-mesh-splatting/)
+
+Abstract: *
+Recently, a range of neural network-based methods for image rendering have been introduced. 
+One such widely-researched neural radiance field (NeRF) relies 
+on a neural network to represent 3D scenes, allowing for realistic view synthesis
+from a small number of 2D images. However, most NeRF models are constrained by 
+long training and inference times. 
+In comparison, Gaussian Splatting (GS) is a novel, state-of-the-art technique
+for rendering points in a 3D scene by approximating their contribution to image 
+pixels through Gaussian distributions, warranting fast training and swift,
+real-time rendering. A drawback of GS is the absence of a well-defined approach 
+for its conditioning due to the necessity to condition several hundred thousand 
+Gaussian components. To solve this, we introduce the Gaussian Mesh Splatting (GaMeS) model, 
+which allows modification of Gaussian components in a similar way as meshes.
+We parameterize each Gaussian component by the vertices of the mesh face. 
+Furthermore, our model needs mesh initialization on input or estimated mesh during
+training. We also define Gaussian splats solely based on their location on the mesh,
+allowing for automatic adjustments in position, scale, and rotation during animation.
+As a result, we obtain a real-time rendering of editable GS.*
+
+Check us if you want to make a flying hotdog:
+
+<img src="./assets/hotdog_fly.gif" width="250" height="250"/> </br>
+</br>
+
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+<h3 class="title">GaMeS Gaussian Mesh Splatting</h3>
+    <pre><code>@Article{waczynska2024games,
+      author         = {Joanna Waczyńska and Piotr Borycki and Sławomir Tadeja and Jacek Tabor and Przemysław Spurek},
+      title          = {GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting},
+      year           = {2024},
+      eprint         = {2402.01459},
+      archivePrefix  = {arXiv},
+      primaryClass   = {cs.CV},
+}
+</code></pre>
+    <h3 class="title">Gaussian Splatting</h3>
+    <pre><code>@Article{kerbl3Dgaussians,
+      author         = {Kerbl, Bernhard and Kopanas, Georgios and Leimk{\"u}hler, Thomas and Drettakis, George},
+      title          = {3D Gaussian Splatting for Real-Time Radiance Field Rendering},
+      journal        = {ACM Transactions on Graphics},
+      number         = {4},
+      volume         = {42},
+      month          = {July},
+      year           = {2023},
+      url            = {https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/}
+}</code></pre>
+  </div>
+</section>
+
+Multiple animation is possible like dancing ficus:</br>
+</br>
+<img src="./assets/ficus_dance.gif" width="250" height="250"/>
+<img src="./assets/ficus_leaves.gif" width="250" height="250"/>
+</br>
 
 # Installation
 
