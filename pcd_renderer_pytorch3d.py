@@ -19,7 +19,7 @@ def pcd_renderer_pytorch3d(viewpoint_camera,
                             faces_per_pixel=1, device="cuda"):
     
     if pcd is None:
-        pcd = o3d.io.read_point_cloud("/mnt/data1/syjintw/NEU/dataset/hotdog/points3d.ply")
+        pcd = o3d.io.read_point_cloud("/mnt/data1/samk/NEU/dataset/hotdog/points3d.ply")
     
     points = torch.tensor(np.asarray(pcd.points), dtype=torch.float32, device='cuda')
     colors = torch.tensor(np.asarray(pcd.colors), dtype=torch.float32, device='cuda')

@@ -74,7 +74,9 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 SCENE_NAME = "hotdog"
-check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
+BASE_PATH= "" #[TODO] fix hardcoded path
+
+check_path = Path(f'/mnt/data1/samk/NEU/mesh-splat/training_check/{SCENE_NAME}')
 check_path.mkdir(parents=True, exist_ok=True)
 
 def load_with_white_bg(path):
@@ -92,6 +94,7 @@ def load_with_white_bg(path):
     img_out = img_out[:, :, ::-1]
     return img_out
 
+# [TODO] refactor the policy part out
 def warmup(viewpoint_cameras, p3d_mesh,
                image_height=800, image_width=800, faces_per_pixel=1,
                device="cuda"):
@@ -111,7 +114,7 @@ def warmup(viewpoint_cameras, p3d_mesh,
         filtered_obj_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load mesh with Trimesh
-    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
+    tm_mesh = trimesh.load("/mnt/data1/samk/NEU/dataset/hotdog/mesh.obj", process=False)
     
     # Change Trimesh into PyTorch3D, and also handle texture from UV map
     verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device=device)
@@ -121,13 +124,13 @@ def warmup(viewpoint_cameras, p3d_mesh,
     tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
     
     # Load mesh with PyTorch3D
-    p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to(device)
+    p3d_mesh = load_objs_as_meshes(["/mnt/data1/samk/NEU/dataset/hotdog/mesh.obj"]).to(device)
 
     num_faces = faces.shape[0]
     dist_map_all = np.zeros(num_faces, dtype=np.float32)
     for i, viewpoint_camera in enumerate(viewpoint_cameras):
         # Load ground truth image
-        gt_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_camera.image_name}.png"
+        gt_image_path = f"/mnt/data1/samk/NEU/dataset/hotdog/mesh_texture/{viewpoint_camera.image_name}.png"
         gt_img = load_with_white_bg(gt_image_path) # (W, H)
         
         # Render p3d_mesh with PyTorch3D for comparing the visual quality
@@ -229,7 +232,7 @@ def warmup(viewpoint_cameras, p3d_mesh,
     print("dist_int:", dist_int.shape, dist_int.dtype, dist_int.min(), dist_int.max(), dist_int.mean())
 
     print("Saving number of Gaussians in each triangle...")
-    np.save("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy", dist_int)
+    np.save("/mnt/data1/samk/NEU/dataset/hotdog/num_of_gaussians.npy", dist_int)
 
     
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
@@ -244,14 +247,14 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
-    textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    textured_mesh = load_objs_as_meshes(["/mnt/data1/samk/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
     
-    # warmup(scene.getTrainCameras().copy(), textured_mesh)
-    # exit()
+    warmup(scene.getTrainCameras().copy(), textured_mesh)
+    exit()
     
     # Not sure why need to get background in this part
     # --------------------------- Load background image -------------------------- #
-    background_image_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/r_0.png"
+    background_image_path = "/mnt/data1/samk/NEU/dataset/hotdog/mesh_texture/r_0.png"
     img = Image.open(background_image_path).convert("RGB")
     viewpoint_camera_height = 800
     viewpoint_camera_width = 800
@@ -262,7 +265,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     background = transform(img).to(torch.float32).cuda()
     
     # ----------------------------- Load depth image ----------------------------- #
-    background_depth_pt_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/r_0.pt"
+    background_depth_pt_path = "/mnt/data1/samk/NEU/dataset/hotdog/mesh_depth/r_0.pt"
     background_depth = torch.load(background_depth_pt_path).unsqueeze(0)
     # <<<< [YC]
 
@@ -325,13 +328,13 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         ])
         
         # ------------------------------ Mesh background ----------------------------- #
-        bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
+        bg_image_path = f"/mnt/data1/samk/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
         img = Image.open(bg_image_path).convert("RGB")
         img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
         bg = transform(img).to(torch.float32).cuda()
         
         # ------------------------------ Mesh depth background ----------------------------- #
-        bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
+        bg_depth_pt_path = f"/mnt/data1/samk/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
         bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
 
         # ------------------------------ Pure background ----------------------------- #
@@ -358,7 +361,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gt_image = viewpoint_cam.original_image.cuda()
 
         # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 100 == 0:
+        if iteration % 1 == 0:
             img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
             img_pil = TF.to_pil_image(img_to_save)
             img_pil.save(check_path/f"{iteration}_mesh.png")

@@ -50,6 +50,7 @@ def readNerfSyntheticMeshInfo(
     print("Reading Mesh object")
     mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
     
+    # [NOTE] trimesh and pytorch3d have different coordinate system
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate
     mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
         angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
@@ -102,7 +103,7 @@ def readNerfSyntheticMeshInfo(
         print("num_splats_per_triangle shape:", num_splats_per_triangle.shape)
         print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
         
-        filter_path = Path("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy")
+        filter_path = Path("/mnt/data1/samk/NEU/dataset/hotdog/num_of_gaussians.npy")
         if filter_path.exists(): 
             print("Loading splat filter from:", filter_path)
             loaded_filter = np.load(filter_path)
