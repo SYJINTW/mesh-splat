@@ -68,20 +68,21 @@ pip install -e .
 # Usage Example
 ## Training
 ```bash
-python train.py --eval \                                                                      
+CUDA_VISIBLE_DEVICES=3 python train.py --eval \
 -s /mnt/data1/syjintw/NEU/dataset/hotdog \
 -m output/hotdog_testing \
 --gs_type gs_mesh -w --iteration 10 \
 --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---debugging
+--debugging \
+--occlusion
 ```
 
 ## Rendering
 ```bash
-python ./render_mesh_splat.py \                                                               
+python ./render_mesh_splat.py \
 -m output/hotdog_testing \
 --gs_type gs_mesh \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
 ```
 
 ## Evaluation
@@ -91,3 +92,85 @@ python metrics.py \
 --gs_type gs_mesh
 ```
 
+# Experiment Code
+## Compare performance of occlusion
+Using visual_distortion policy for evaluation
+### With occlusion
+```bash
+CUDA_VISIBLE_DEVICES=0 python train.py --eval \
+-s /mnt/data1/syjintw/NEU/dataset/hotdog \
+-m output/hotdog_meshsplat_with_occlusion \
+--gs_type gs_mesh -w --iteration 1000 \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+--debugging --debug_freq 100 \
+--occlusion \
+--policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python ./render_mesh_splat.py \
+-m output/hotdog_meshsplat_with_occlusion \
+--gs_type gs_mesh \
+--skip_train \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+--occlusion \
+--policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python metrics.py \
+-m output/hotdog_meshsplat_with_occlusion \
+--gs_type gs_mesh
+```
+
+### Without occlusion
+```bash
+CUDA_VISIBLE_DEVICES=1 python train.py --eval \
+-s /mnt/data1/syjintw/NEU/dataset/hotdog \
+-m output/hotdog_meshsplat_wo_occlusion \
+--gs_type gs_mesh -w --iteration 1000 \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+--debugging --debug_freq 100 \
+--policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python ./render_mesh_splat.py \
+-m output/hotdog_meshsplat_wo_occlusion \
+--gs_type gs_mesh \
+--skip_train \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+--policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python metrics.py \
+-m output/hotdog_meshsplat_wo_occlusion \
+--gs_type gs_mesh
+```
+
+### Original Gaussian Splatting
+If "gs_type" is “gs”, then there is no "texture_obj_path" and "policy_path".
+```bash
+CUDA_VISIBLE_DEVICES=2 python train.py --eval \
+-s /mnt/data1/syjintw/NEU/dataset/hotdog \
+-m output/hotdog_gs \
+--gs_type gs -w --iteration 1000 \
+--debugging --debug_freq 100
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=2 python ./render_gs.py \
+-m output/hotdog_gs \
+--gs_type gs \
+--skip_train
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=2 python metrics.py \
+-m output/hotdog_gs \
+--gs_type gs
+```
+
+### GaMeS
+Tricky part: Also using "gs_type" is “gs_mesh”

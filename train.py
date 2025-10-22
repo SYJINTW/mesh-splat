@@ -75,8 +75,6 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 SCENE_NAME = "hotdog"
-check_path = Path(f'/mnt/data1/syjintw/NEU/mesh-splat/training_check/{SCENE_NAME}')
-check_path.mkdir(parents=True, exist_ok=True)
 
 def load_with_white_bg(path):
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
@@ -235,19 +233,28 @@ def warmup(viewpoint_cameras, p3d_mesh,
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
             debug_from, save_xyz,
             # >>>> [YC] add
-            texture_obj_path, debugging
+            texture_obj_path, 
+            debugging, debug_freq,
+            occlusion,
+            policy_path
             # <<<< [YC] add
             ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
-
-    scene = Scene(dataset, gaussians) #! [YC] note: main changing point is here
+    print("Training func policy_path:", policy_path)
+    scene = Scene(dataset, gaussians, 
+                  policy_path=policy_path) #! [YC] note: main changing point is here
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
+    if debugging:
+        print("Debugging mode is on.")
+        check_path = Path(scene.model_path)/"debugging"/"training_check"
+        check_path.mkdir(parents=True, exist_ok=True)
+        
     # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
     textured_mesh = None
     if texture_obj_path != "":
@@ -324,9 +331,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # ---------------------------------------------------------------------------- #
         #                                Load Background                               #
         # ---------------------------------------------------------------------------- #
-        viewpoint_camera_height = 800
-        viewpoint_camera_width = 800
-        
+        viewpoint_camera_height = viewpoint_cam.image_height
+        viewpoint_camera_width = viewpoint_cam.image_width
+
         transform = T.Compose([
             T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
         ])
@@ -334,7 +341,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # ------------------------------ Mesh background ----------------------------- #
         bg = None
         if textured_mesh is None:
-            print("Loading precaptured background for rendering...")
+            # print("Loading precaptured background for rendering...")
             bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
             img = Image.open(bg_image_path).convert("RGB")
             img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
@@ -343,13 +350,14 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # ------------------------------ Mesh depth background ----------------------------- #
         bg_depth = None
         if textured_mesh is None:
-            print("Loading precaptured depth for rendering...")
+            # print("Loading precaptured depth for rendering...")
             bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
             bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
 
         # ------------------------------ Pure background ----------------------------- #
         pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-        pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda")
+        pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+        pure_bg = pure_bg.expand(3, viewpoint_camera_height, viewpoint_camera_width)
         
         # --------------------- Pure depth background (all zeros) -------------------- #
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
@@ -359,12 +367,21 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             pipe.debug = True
 
         # >>>> [YC]
-        # ------------- Render mesh background and mesh depth background ------------- #
-        # Rendering for training
-        render_pkg = render(viewpoint_cam, gaussians, pipe, 
-                            bg_color=bg, bg_depth=bg_depth,
-                            textured_mesh=textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
+        # -------------------------- Rendering for training -------------------------- #
+        if gs_type == "gs":
+            render_pkg = render(viewpoint_cam, gaussians, pipe, 
+                                bg_color=pure_bg, bg_depth=pure_bg_depth)
+        elif gs_type == "gs_mesh":
+            if occlusion: # [YC] use occlusion diff-gaussian-rasterizer for training
+                render_pkg = render(viewpoint_cam, gaussians, pipe, 
+                                    bg_color=bg, bg_depth=bg_depth,
+                                    textured_mesh=textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
+            else: # [YC] use original diff-gaussian-rasterizer for training
+                render_pkg = render(viewpoint_cam, gaussians, pipe, 
+                                    bg_color=bg, bg_depth=pure_bg_depth,
+                                    textured_mesh=textured_mesh) # [YC] no occlusion handling, always use pure bg and pure depth
         # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
+        
         image = render_pkg["render"]
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
@@ -373,53 +390,66 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
 
         if debugging:
             # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-            if iteration % 1 == 0:
-                img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
-                img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_mesh.png")
-                
-                # ------------- Render mesh background and mesh depth background ------------- #
-                img_to_save = image.detach().clamp(0, 1).cpu()
-                img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_gs_mesh_with_depth.png")
-                
-                # ------------- Render mesh background and fake depth background ------------- #
-                # [0, 1, 1]
-                render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
-                                                bg_color=bg, bg_depth=pure_bg_depth,
-                                                textured_mesh=textured_mesh)
-                image_gs_mesh_wo_depth = render_pure_with_depth["render"]
-
-                img_to_save = image_gs_mesh_wo_depth.detach().clamp(0, 1).cpu()
-                img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_gs_mesh_wo_depth.png")
-
-                # ------------- Render pure background and mesh depth background ------------- #
-                # [1, 0, 1]
-                render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
-                                                bg_color=pure_bg, bg_depth=bg_depth,
-                                                textured_mesh=textured_mesh)
-                image_gs_pure_with_depth = render_pure_with_depth["render"]
-                
-                img_to_save = image_gs_pure_with_depth.detach().clamp(0, 1).cpu()
-                img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_gs_pure_with_depth.png")
-                
-                # ------------- Render pure background and fake depth background ------------- #
-                # [1, 1, 1]
-                render_pure_wo_depth = render(viewpoint_cam, gaussians, pipe, 
-                                              bg_color=pure_bg, bg_depth=pure_bg_depth,
-                                              textured_mesh=None)
-                image_gs_pure_wo_depth = render_pure_wo_depth["render"]
-                
-                img_to_save = image_gs_pure_wo_depth.detach().clamp(0, 1).cpu()
-                img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_gs_pure_wo_depth.png")
-                
+            if iteration % debug_freq == 0:
                 # ---------------------------- Ground truth image ---------------------------- #
                 gt_img_to_save = gt_image.detach().clamp(0, 1).cpu()
                 gt_img_pil = TF.to_pil_image(gt_img_to_save)
                 gt_img_pil.save(check_path/f"{iteration}_gt.png")
+                
+                # ------------------------ Render image from training ------------------------ #
+                img_to_save = image.detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_training.png")
+                
+                # ----------------------- Background image for training ---------------------- #
+                img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_training_bg.png")
+                
+                if gs_type == "gs_mesh":
+                    # ------------- Render mesh background and depth background ------------- #
+                    # [1, 1, 1]
+                    render_mesh_with_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                    bg_color=bg, bg_depth=bg_depth,
+                                                    textured_mesh=textured_mesh)
+                    _image = render_mesh_with_depth["render"]
+
+                    img_to_save = _image.detach().clamp(0, 1).cpu()
+                    img_pil = TF.to_pil_image(img_to_save)
+                    img_pil.save(check_path/f"{iteration}_gs_mesh_with_depth.png")
+                
+                    # ------------- Render mesh background and fake depth background ------------- #
+                    # [0, 1, 1]
+                    render_mesh_wo_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                    bg_color=bg, bg_depth=pure_bg_depth,
+                                                    textured_mesh=textured_mesh)
+                    _image = render_mesh_wo_depth["render"]
+
+                    img_to_save = _image.detach().clamp(0, 1).cpu()
+                    img_pil = TF.to_pil_image(img_to_save)
+                    img_pil.save(check_path/f"{iteration}_gs_mesh_wo_depth.png")
+
+                    # ------------- Render pure background and mesh depth background ------------- #
+                    # [1, 0, 1]
+                    render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                    bg_color=pure_bg, bg_depth=bg_depth,
+                                                    textured_mesh=textured_mesh)
+                    _image = render_pure_with_depth["render"]
+                    
+                    img_to_save = _image.detach().clamp(0, 1).cpu()
+                    img_pil = TF.to_pil_image(img_to_save)
+                    img_pil.save(check_path/f"{iteration}_gs_pure_with_depth.png")
+                
+                    # ------------- Render pure background and fake depth background ------------- #
+                    # [1, 1, 1]
+                    render_pure_wo_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                bg_color=pure_bg, bg_depth=pure_bg_depth,
+                                                textured_mesh=None)
+                    _image = render_pure_wo_depth["render"]
+                    
+                    img_to_save = _image.detach().clamp(0, 1).cpu()
+                    img_pil = TF.to_pil_image(img_to_save)
+                    img_pil.save(check_path/f"{iteration}_gs_pure_wo_depth.png")
             # <<<< [YC]
             
         # Compute loss and backpropagate
@@ -573,10 +603,12 @@ if __name__ == "__main__":
     parser.add_argument("--save_xyz", action='store_true')
     
     # >>>> [YC] add
-    parser.add_argument('--policy_path', type=str, default="")
-    parser.add_argument('--debugging', action='store_true')
-    parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     parser.add_argument('--texture_obj_path', type=str, default="")
+    parser.add_argument('--debugging', action='store_true')
+    parser.add_argument('--debug_freq', type=int, default=1, help="Iteration of saving debugging images")
+    parser.add_argument('--occlusion', action='store_true')
+    parser.add_argument('--policy_path', type=str, default="")
+    # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     # <<<< [YC] add
 
     lp = ModelParams(parser)
@@ -605,7 +637,10 @@ if __name__ == "__main__":
         args.test_iterations, args.save_iterations, args.checkpoint_iterations,
         args.start_checkpoint, args.debug_from, args.save_xyz,
         # >>>> [YC] add
-        args.texture_obj_path, args.debugging
+        texture_obj_path=args.texture_obj_path,
+        debugging=args.debugging, debug_freq=args.debug_freq,
+        occlusion=args.occlusion,
+        policy_path=args.policy_path
         # <<<< [YC] add
     )
 

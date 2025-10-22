@@ -24,12 +24,14 @@ class Scene:
 
     def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0],
                 # >>>> [YC] add
-                texture_obj_path : str = None
+                texture_obj_path : str = None,
+                policy_path : str = None
                 # <<<< [YC] add
                 ):
         """b
         :param path: Path to colmap scene main folder.
         """
+        print("Scene init policy_path:", policy_path) # [YC] debug
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
@@ -57,7 +59,8 @@ class Scene:
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
-                    texture_obj_path=texture_obj_path
+                    texture_obj_path=texture_obj_path,
+                    policy_path=policy_path
                     # <<<< [YC] add
                 )
             elif args.gs_type == "gs_flame":
