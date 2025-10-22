@@ -1,0 +1,6 @@
+Looking for config file in output/hotdog_testing/cfg_args
+Config file found: output/hotdog_testing/cfg_args
+Rendering output/hotdog_testing
+Loading trained model at iteration 10000 [22/10 13:12:27]
+Found transforms_train.json file, assuming Blender_Mesh data set! [22/10 13:12:27]
+Reading Training Transforms [22/10 13:12:27]

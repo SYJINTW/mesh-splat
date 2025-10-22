@@ -14,35 +14,48 @@ from scene import Scene
 import os
 from tqdm import tqdm
 from os import makedirs
-from renderer.gaussian_renderer import render
+# from renderer.gaussian_renderer import render
+from renderer.mesh_splat_renderer import render # [YC] change to mesh_splat_renderer
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from games import gaussianModelRender
 
-from PIL import Image
-import torchvision.transforms as T
+from pytorch3d.io import load_objs_as_meshes
 
-
-def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline, background,
+                # >>>> [YC] add
+                texture_obj_path : str = None
+                # <<<< [YC] add
+                ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_{gs_type}")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
-
+    
+    textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+    
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        rendering = render(view, gaussians, pipeline, background)["render"]
+        # rendering = render(view, gaussians, pipeline, background)["render"]
+        rendering = render(view, gaussians, pipeline, 
+                           bg_color=None, bg_depth=None,
+                           textured_mesh=textured_mesh)["render"] # [YC] using different rasterizer
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
 
-def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
+def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool,
+                # >>>> [YC] add
+                texture_obj_path : str = None
+                # <<<< [YC] add
+                ):
     with torch.no_grad():
         gaussians = gaussianModelRender[gs_type](dataset.sh_degree)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        scene = Scene(dataset, gaussians, 
+                      load_iteration=iteration, shuffle=False)
         if hasattr(gaussians, 'update_alpha'):
             gaussians.update_alpha()
         if hasattr(gaussians, 'prepare_vertices'):
@@ -50,40 +63,22 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         if hasattr(gaussians, 'prepare_scaling_rot'):
             gaussians.prepare_scaling_rot()
 
-        # bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-        # background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-        
-        # # Load static image background
-        # background_image_path = "/home/syjintw/Desktop/NEU/gaussian-mesh-splatting/output_render_no_light.png"
-        # img = Image.open(background_image_path).convert("RGB")
-        # viewpoint_camera_height = 800
-        # viewpoint_camera_width = 800
-        # # === 1. Use PIL to load images ===
-        # img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
-
-        # # === 2. Change image to Tensor ===
-        # transform = T.Compose([
-        #     T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
-        # ])
-        # background = transform(img).to(torch.float32).cuda()
-        
-        # # Random noise as background
-        # viewpoint_camera_height = 800
-        # viewpoint_camera_width = 800
-        # background = torch.rand((3, viewpoint_camera_height, viewpoint_camera_width), dtype=torch.float32, device="cuda")
-        # print(background)
-
-        # Random noise as background
-        viewpoint_camera_height = 800
-        viewpoint_camera_width = 800
-        background = torch.ones((3, viewpoint_camera_height, viewpoint_camera_width), dtype=torch.float32, device="cuda")
-        # print(background)
+        bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(gs_type, dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+             render_set(gs_type, dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,
+                        # >>>> [YC] add
+                        texture_obj_path=texture_obj_path
+                        # <<<< [YC] add
+                        )
 
         if not skip_test:
-             render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+             render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,
+                        # >>>> [YC] add
+                        texture_obj_path=texture_obj_path
+                        # <<<< [YC] add
+                        )
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -97,6 +92,10 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
 
+    # >>>> [YC] add
+    parser.add_argument("--texture_obj_path", type=str, default=None, help="Path to the textured obj file for mesh-based datasets.")
+    # <<<< [YC] add
+    
     args = get_combined_args(parser)
     model.gs_type = args.gs_type
     model.num_splats = args.num_splats
@@ -105,5 +104,8 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(args.gs_type, model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test)
-    
+    render_sets(args.gs_type, model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test,
+                # >>>> [YC] add
+                texture_obj_path=args.texture_obj_path
+                # <<<< [YC] add
+                )

@@ -41,6 +41,10 @@ class GaussianMeshModel(GaussianModel):
         self.faces = None
         self.triangles = None
         self.eps_s0 = 1e-8
+        
+        # >>>> [YC] add
+        self.triangle_indices = None
+        # <<<< [YC] add
 
     @property
     def get_xyz(self):
@@ -62,8 +66,7 @@ class GaussianMeshModel(GaussianModel):
         alpha_point_cloud = pcd.alpha.float().cuda()
         scale = torch.ones((pcd.points.shape[0], 1)).float().cuda()
 
-        print("Number of points at initialisation : ",
-              alpha_point_cloud.shape[0] * alpha_point_cloud.shape[1])
+        print("Number of points at initialisation : ", alpha_point_cloud.shape[0] * alpha_point_cloud.shape[1])
 
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()

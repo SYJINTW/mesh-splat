@@ -16,7 +16,8 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim
-from renderer.gaussian_renderer import render, network_gui
+# from renderer.gaussian_renderer import render, network_gui
+from renderer.mesh_splat_renderer import render, network_gui
 import sys
 from scene import Scene
 from games import (
@@ -230,21 +231,29 @@ def warmup(viewpoint_cameras, p3d_mesh,
 
     print("Saving number of Gaussians in each triangle...")
     np.save("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy", dist_int)
-
-    
+   
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
-             debug_from, save_xyz):
+            debug_from, save_xyz,
+            # >>>> [YC] add
+            texture_obj_path, debugging
+            # <<<< [YC] add
+            ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = gaussianModel[gs_type](dataset.sh_degree)
+    gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
 
-    scene = Scene(dataset, gaussians)
+    scene = Scene(dataset, gaussians) #! [YC] note: main changing point is here
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
-    textured_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to("cuda")
+    # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
+    textured_mesh = None
+    if texture_obj_path != "":
+        print("Loading textured mesh for background rendering...")
+        textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+    # <<<< [YC] add
     
     # warmup(scene.getTrainCameras().copy(), textured_mesh)
     # exit()
@@ -310,9 +319,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             viewpoint_stack = scene.getTrainCameras().copy()
         
         rand_cam_id = randint(0, len(viewpoint_stack) - 1)
-        # rand_cam_id = 0
         viewpoint_cam = viewpoint_stack.pop(rand_cam_id)
-        # print(viewpoint_cam.uid, viewpoint_cam.image_name)
         
         # ---------------------------------------------------------------------------- #
         #                                Load Background                               #
@@ -325,14 +332,20 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         ])
         
         # ------------------------------ Mesh background ----------------------------- #
-        bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
-        img = Image.open(bg_image_path).convert("RGB")
-        img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
-        bg = transform(img).to(torch.float32).cuda()
+        bg = None
+        if textured_mesh is None:
+            print("Loading precaptured background for rendering...")
+            bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
+            img = Image.open(bg_image_path).convert("RGB")
+            img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
+            bg = transform(img).to(torch.float32).cuda()
         
         # ------------------------------ Mesh depth background ----------------------------- #
-        bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
-        bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
+        bg_depth = None
+        if textured_mesh is None:
+            print("Loading precaptured depth for rendering...")
+            bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
+            bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
 
         # ------------------------------ Pure background ----------------------------- #
         pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -341,63 +354,74 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # --------------------- Pure depth background (all zeros) -------------------- #
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")
         
-        
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
         # >>>> [YC]
         # ------------- Render mesh background and mesh depth background ------------- #
-        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth,
-        #                     textured_mesh=textured_mesh)
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
+        # Rendering for training
+        render_pkg = render(viewpoint_cam, gaussians, pipe, 
+                            bg_color=bg, bg_depth=bg_depth,
+                            textured_mesh=textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
+        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
         image = render_pkg["render"]
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
         # -------------------------- Load ground truth image ------------------------- #
         gt_image = viewpoint_cam.original_image.cuda()
 
-        # ------------------- Change Tensor to PIL.Image for saving ------------------ #
-        if iteration % 100 == 0:
-            img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
-            img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}_mesh.png")
-            
-            # ------------- Render mesh background and mesh depth background ------------- #
-            img_to_save = image.detach().clamp(0, 1).cpu()
-            img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}_gs_mesh_with_depth.png")
-            
-            # ------------- Render mesh background and fake depth background ------------- #
-            render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, bg, pure_bg_depth)
-            image_gs_mesh_wo_depth = render_pure_with_depth["render"]
+        if debugging:
+            # ------------------- Change Tensor to PIL.Image for saving ------------------ #
+            if iteration % 1 == 0:
+                img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_mesh.png")
+                
+                # ------------- Render mesh background and mesh depth background ------------- #
+                img_to_save = image.detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_gs_mesh_with_depth.png")
+                
+                # ------------- Render mesh background and fake depth background ------------- #
+                # [0, 1, 1]
+                render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                bg_color=bg, bg_depth=pure_bg_depth,
+                                                textured_mesh=textured_mesh)
+                image_gs_mesh_wo_depth = render_pure_with_depth["render"]
 
-            img_to_save = image_gs_mesh_wo_depth.detach().clamp(0, 1).cpu()
-            img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}_gs_mesh_wo_depth.png")
+                img_to_save = image_gs_mesh_wo_depth.detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_gs_mesh_wo_depth.png")
 
-            # ------------- Render pure background and mesh depth background ------------- #
-            render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, pure_bg, bg_depth)
-            image_gs_pure_with_depth = render_pure_with_depth["render"]
+                # ------------- Render pure background and mesh depth background ------------- #
+                # [1, 0, 1]
+                render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
+                                                bg_color=pure_bg, bg_depth=bg_depth,
+                                                textured_mesh=textured_mesh)
+                image_gs_pure_with_depth = render_pure_with_depth["render"]
+                
+                img_to_save = image_gs_pure_with_depth.detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_gs_pure_with_depth.png")
+                
+                # ------------- Render pure background and fake depth background ------------- #
+                # [1, 1, 1]
+                render_pure_wo_depth = render(viewpoint_cam, gaussians, pipe, 
+                                              bg_color=pure_bg, bg_depth=pure_bg_depth,
+                                              textured_mesh=None)
+                image_gs_pure_wo_depth = render_pure_wo_depth["render"]
+                
+                img_to_save = image_gs_pure_wo_depth.detach().clamp(0, 1).cpu()
+                img_pil = TF.to_pil_image(img_to_save)
+                img_pil.save(check_path/f"{iteration}_gs_pure_wo_depth.png")
+                
+                # ---------------------------- Ground truth image ---------------------------- #
+                gt_img_to_save = gt_image.detach().clamp(0, 1).cpu()
+                gt_img_pil = TF.to_pil_image(gt_img_to_save)
+                gt_img_pil.save(check_path/f"{iteration}_gt.png")
+            # <<<< [YC]
             
-            img_to_save = image_gs_pure_with_depth.detach().clamp(0, 1).cpu()
-            img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}_gs_pure_with_depth.png")
-            
-            # ------------- Render pure background and fake depth background ------------- #
-            render_pure_wo_depth = render(viewpoint_cam, gaussians, pipe, pure_bg, pure_bg_depth)
-            image_gs_pure_wo_depth = render_pure_wo_depth["render"]
-            
-            img_to_save = image_gs_pure_wo_depth.detach().clamp(0, 1).cpu()
-            img_pil = TF.to_pil_image(img_to_save)
-            img_pil.save(check_path/f"{iteration}_gs_pure_wo_depth.png")
-            
-            # ---------------------------- Ground truth image ---------------------------- #
-            gt_img_to_save = gt_image.detach().clamp(0, 1).cpu()
-            gt_img_pil = TF.to_pil_image(gt_img_to_save)
-            gt_img_pil.save(check_path/f"{iteration}_gt.png")
-        # <<<< [YC]
-        
         # Compute loss and backpropagate
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
@@ -547,6 +571,13 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument("--save_xyz", action='store_true')
+    
+    # >>>> [YC] add
+    parser.add_argument('--policy_path', type=str, default="")
+    parser.add_argument('--debugging', action='store_true')
+    parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
+    parser.add_argument('--texture_obj_path', type=str, default="")
+    # <<<< [YC] add
 
     lp = ModelParams(parser)
     args, _ = parser.parse_known_args(sys.argv[1:])
@@ -572,7 +603,10 @@ if __name__ == "__main__":
         args.gs_type,
         lp.extract(args), op.extract(args), pp.extract(args),
         args.test_iterations, args.save_iterations, args.checkpoint_iterations,
-        args.start_checkpoint, args.debug_from, args.save_xyz
+        args.start_checkpoint, args.debug_from, args.save_xyz,
+        # >>>> [YC] add
+        args.texture_obj_path, args.debugging
+        # <<<< [YC] add
     )
 
     # All done

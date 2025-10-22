@@ -66,9 +66,28 @@ pip install -e .
 ```
 
 # Usage Example
+## Training
 ```bash
-python train.py --eval \
+python train.py --eval \                                                                      
 -s /mnt/data1/syjintw/NEU/dataset/hotdog \
 -m output/hotdog_testing \
---gs_type gs_mesh -w --iteration 10
+--gs_type gs_mesh -w --iteration 10 \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+--debugging
 ```
+
+## Rendering
+```bash
+python ./render_mesh_splat.py \                                                               
+-m output/hotdog_testing \
+--gs_type gs_mesh \
+--texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj
+```
+
+## Evaluation
+```bash
+python metrics.py \
+-m /mnt/data1/syjintw/NEU/mesh-splat/output/hotdog_testing \
+--gs_type gs_mesh
+```
+

@@ -22,7 +22,11 @@ class Scene:
 
     gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0],
+                # >>>> [YC] add
+                texture_obj_path : str = None
+                # <<<< [YC] add
+                ):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -51,7 +55,10 @@ class Scene:
             if args.gs_type == "gs_mesh": #! [YC] need to aware of gs_type
                 print("Found transforms_train.json file, assuming Blender_Mesh data set!")
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
-                    args.source_path, args.white_background, args.eval, args.num_splats[0]
+                    args.source_path, args.white_background, args.eval, args.num_splats[0],
+                    # >>>> [YC] add
+                    texture_obj_path=texture_obj_path
+                    # <<<< [YC] add
                 )
             elif args.gs_type == "gs_flame":
                 print("Found transforms_train.json file, assuming Flame Blender data set!")
@@ -102,8 +109,7 @@ class Scene:
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
-        if self.loaded_iter:
-            print("self.loaded_iter") # [YC] debug
+        if self.loaded_iter: # [YC] note: for rendering
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
@@ -111,8 +117,11 @@ class Scene:
             self.gaussians.point_cloud = scene_info.point_cloud
             if args.gs_type == "gs_mesh": #! [YC] need to aware of gs_type
                 self.gaussians.triangles = scene_info.point_cloud.triangles
+                # >>>> [YC] add
+                self.gaussians.triangle_indices = scene_info.point_cloud.triangle_indices.cuda() # [YC] add
+                # <<<< [YC] add
         else: # [YC] note: first time training
-            print("Not self.loaded_iter") # [YC] debug
+            # [YC] note: if using "gs_mesh", the create_from_pcd will use the one defined in mesh-splat/games/scene/gaussian_model_mesh.py
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
     def save(self, iteration):
@@ -124,3 +133,4 @@ class Scene:
 
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
+    

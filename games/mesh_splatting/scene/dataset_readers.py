@@ -40,7 +40,10 @@ def transform_vertices_function(vertices, c=1):
 
 
 def readNerfSyntheticMeshInfo(
-        path, white_background, eval, num_splats, extension=".png"
+        path, white_background, eval, num_splats, extension=".png",
+        # >>>> [YC] add
+        texture_obj_path: str = None
+        # <<<< [YC] add
 ):
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
@@ -48,8 +51,11 @@ def readNerfSyntheticMeshInfo(
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
     
     print("Reading Mesh object")
-    mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
-    
+    if texture_obj_path is None:
+        mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
+    else:
+        mesh_scene = trimesh.load(texture_obj_path, force='mesh')
+
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate
     mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
         angle=-np.pi/2, direction=[1, 0, 0], point=[0, 0, 0]
@@ -100,18 +106,20 @@ def readNerfSyntheticMeshInfo(
         # Uniform splatting density
         num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
         print("num_splats_per_triangle shape:", num_splats_per_triangle.shape)
-        print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+        print("Original Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
         
-        filter_path = Path("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy")
+        filter_path = Path("/mnt/data1/syjintw/NEU/dataset/hotdog/policy/num_of_gaussians.npy")
         if filter_path.exists(): 
             print("Loading splat filter from:", filter_path)
             loaded_filter = np.load(filter_path)
             print("loaded_filter shape:", loaded_filter.shape)
-            print("Max and min:", loaded_filter.max(), loaded_filter.min())
+            print("Filter Max and min:", loaded_filter.max(), loaded_filter.min())
             num_splats_per_triangle = num_splats_per_triangle * loaded_filter
             print("Adjusted num_splats_per_triangle shape:", num_splats_per_triangle.shape)
-        
-        print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+        else:
+            print("No splat filter found at:", filter_path)
+            
+        print("Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
         
         # Since this data set has no colmap data, we start with random points
         num_pts = num_splats_per_triangle.sum()
@@ -186,43 +194,6 @@ def readNerfSyntheticMeshInfo(
             tri_indices.append(torch.full((n,), i, dtype=torch.long))
         
         tri_indices = torch.cat(tri_indices, dim=0)
-        
-        
-        
-        # # >>>> [YC] Prepare UV
-        # face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
-        # H, W = texture_img.shape[:2]        
-        
-        # # Convert UVs (3 per face) to pixel coordinates
-        # px = (face_uvs[..., 0] * (W - 1)).astype(int)
-        # py = ((1 - face_uvs[..., 1]) * (H - 1)).astype(int)
-        
-        # # Clamp
-        # px = np.clip(px, 0, W - 1)
-        # py = np.clip(py, 0, H - 1)
-        
-        # # Sample 3 vertex colors per triangle
-        # tri_vertex_colors = texture_img[py, px, :3]   # (n_faces, 3, 3)
-        
-        # # Average per-triangle color
-        # tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
-        # # <<<< [YC] 
-        
-        # # We create random points inside the bounds traingles
-        # alpha = torch.rand(
-        #     triangles.shape[0],
-        #     num_splats, #! [YC] note: this part decide how many points per triangle
-        #     3 
-        # )
-        # xyz = torch.matmul(
-        #     alpha,
-        #     triangles
-        # )
-        # xyz = xyz.reshape(num_splats * triangles.shape[0], 3)
-        # print(alpha.shape, xyz.shape) # [YC] debug
-        
-        # # Repeat each triangle’s color for its num_pts_each_triangle points
-        # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
         
         pcd = MeshPointCloud(
             alpha=alpha,
