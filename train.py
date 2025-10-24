@@ -610,12 +610,23 @@ if __name__ == "__main__":
     parser.add_argument('--policy_path', type=str, default="")
     # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     # <<<< [YC] add
+    
+    parser.add_argument("--total_splats", type=int, default=131_072, help="Total number of splats to allocate (default: 2^17=131072)")
+    parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
+    
+    
+    
 
     lp = ModelParams(parser)
     args, _ = parser.parse_known_args(sys.argv[1:])
     lp.num_splats = args.num_splats
     lp.meshes = args.meshes
     lp.gs_type = args.gs_type
+    
+    # >>>> [Sam] add
+    lp.total_splats = args.total_splats
+    lp.alloc_policy = args.alloc_policy 
+    # <<<< [Sam] add
 
     op = optimizationParamTypeCallbacks[args.gs_type](parser)
     pp = PipelineParams(parser)

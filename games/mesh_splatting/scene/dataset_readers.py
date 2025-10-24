@@ -26,6 +26,7 @@ from scene.dataset_readers import (
     storePly,
 )
 from utils.sh_utils import SH2RGB
+from scene.budgeting import get_budgeting_policy
 
 from pathlib import Path
 
@@ -43,8 +44,14 @@ def readNerfSyntheticMeshInfo(
         path, white_background, eval, num_splats, extension=".png",
         # >>>> [YC] add
         texture_obj_path: str = None,
-        policy_path: str = None
+        policy_path: str = None,
         # <<<< [YC] add
+        # >>>> [SAM] add budgeting policy params
+        total_splats: int = None,  # if None, falls back to num_splats per triangle
+        budgeting_policy_name: str = "uniform",
+        min_splats_per_tri: int = 0,
+        max_splats_per_tri: int = 8,
+        # <<<< [SAM] add
 ):
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
@@ -99,12 +106,12 @@ def readNerfSyntheticMeshInfo(
     
     # if not os.path.exists(ply_path):
     if True:
-        #![YC] note: Sam need to check this part
-        # Default method: distribute splats uniformly on the mesh surface
-        if policy_path is None or policy_path == "":
-            num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-            print("Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-        else: # Using given policy to adjust splat density
+        # [TODO]
+        # >>>> [SAM] Budgeting policy integration
+        # Determine allocation strategy
+        if policy_path is not None and policy_path != "":
+            # [TODO]: load from file
+            # [TODO] integrate error-map-based splat allocation
             filter_path = Path(policy_path)
             if filter_path.exists(): 
                 print("Loading splat filter from:", filter_path)
@@ -116,6 +123,28 @@ def readNerfSyntheticMeshInfo(
                 print("Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
             else:
                 print("No splat filter found at:", filter_path)
+                num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+        elif total_splats is not None:
+            # Use budgeting policy
+            print(f"[INFO] Using budgeting policy: {budgeting_policy_name}")
+            budgeting_policy = get_budgeting_policy(budgeting_policy_name, mesh=mesh_scene)
+            
+            num_splats_per_triangle = budgeting_policy.allocate(
+                triangles=triangles,
+                total_splats=total_splats,
+                min_per_tri=min_splats_per_tri,
+                max_per_tri=max_splats_per_tri,
+            )
+            
+            print(f"[INFO] Requested total splats: {total_splats}")
+            print(f"[INFO] Allocated total splats: {num_splats_per_triangle.sum()}")
+            print(f"[INFO] Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
+            print(f"[INFO] Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
+        else:
+            # Default: uniform distribution using num_splats
+            num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+            print(f"[INFO] Using uniform distribution: {num_splats} splats per triangle")
+        # <<<< [SAM] Budgeting policy integration
         
         # Since this data set has no colmap data, we start with random points
         num_pts = num_splats_per_triangle.sum()
@@ -145,13 +174,18 @@ def readNerfSyntheticMeshInfo(
         print("tri_avg_colors:", tri_avg_colors.shape) # [YC] debug
         # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
         
-        # We create random points inside the bounds traingles
+        # We create random points inside the bounds triangles
         xyz_list = []
         alpha_list = []
         color_list = []
+        tri_indices_list = []
         
+        # >>>> [SAM] Build point-to-triangle mapping
         for i in range(triangles.shape[0]):
             n = num_splats_per_triangle[i]
+            if n == 0:
+                continue
+                
             alpha = torch.rand(n, 3)
             alpha = alpha / alpha.sum(dim=1, keepdim=True)  # normalize to barycentric coords
 
@@ -165,7 +199,8 @@ def readNerfSyntheticMeshInfo(
             xyz_list.append(pts)
             alpha_list.append(alpha)
             color_list.append(color)
-
+            tri_indices_list.append(torch.full((n,), i, dtype=torch.long))
+        # <<<< [SAM]
         
         xyz = torch.cat(xyz_list, dim=0)
         xyz = xyz.reshape(num_pts, 3)
@@ -183,12 +218,7 @@ def readNerfSyntheticMeshInfo(
         scene.add_geometry(mesh_scene)
         scene.add_geometry(points)
         
-        tri_indices = []
-        for i in range(triangles.shape[0]):
-            n = num_splats_per_triangle[i]
-            tri_indices.append(torch.full((n,), i, dtype=torch.long))
-        
-        tri_indices = torch.cat(tri_indices, dim=0)
+        tri_indices = torch.cat(tri_indices_list, dim=0)
         
         pcd = MeshPointCloud(
             alpha=alpha,

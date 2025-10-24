@@ -54,14 +54,18 @@ class Scene:
             else:
                 scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
-            if args.gs_type == "gs_mesh": #! [YC] need to aware of gs_type
+            if args.gs_type == "gs_mesh": #! [YC] need to be aware of gs_type
                 print("Found transforms_train.json file, assuming Blender_Mesh data set!")
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
                     texture_obj_path=texture_obj_path,
-                    policy_path=policy_path
+                    policy_path=policy_path,
                     # <<<< [YC] add
+                    # >>>> [Sam] add
+                    total_splats=args.total_splats,
+                    budgeting_policy_name=args.alloc_policy,
+                    # <<<< [Sam] add
                 )
             elif args.gs_type == "gs_flame":
                 print("Found transforms_train.json file, assuming Flame Blender data set!")

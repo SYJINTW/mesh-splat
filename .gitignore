@@ -12,3 +12,5 @@ experiments/
 run.sh
 
 training_check
+ext/
+*.log
