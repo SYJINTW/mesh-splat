@@ -1,6 +1,5 @@
 
-# [TODO] use python script instead of bash, more maintainable
-# set -e
+set -e
 CUDA_VISIBLE_DEVICES=0
 
 
