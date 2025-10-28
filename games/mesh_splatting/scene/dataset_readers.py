@@ -106,7 +106,6 @@ def readNerfSyntheticMeshInfo(
     
     # if not os.path.exists(ply_path):
     if True:
-        # [TODO]
         # >>>> [SAM] Budgeting policy integration
         # Determine allocation strategy
         if policy_path is not None and policy_path != "":
@@ -126,7 +125,7 @@ def readNerfSyntheticMeshInfo(
                 num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
         elif total_splats is not None:
             # Use budgeting policy
-            print(f"[INFO] Using budgeting policy: {budgeting_policy_name}")
+            print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
             budgeting_policy = get_budgeting_policy(budgeting_policy_name, mesh=mesh_scene)
             
             num_splats_per_triangle = budgeting_policy.allocate(
@@ -136,14 +135,14 @@ def readNerfSyntheticMeshInfo(
                 max_per_tri=max_splats_per_tri,
             )
             
-            print(f"[INFO] Requested total splats: {total_splats}")
-            print(f"[INFO] Allocated total splats: {num_splats_per_triangle.sum()}")
-            print(f"[INFO] Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
-            print(f"[INFO] Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
+            print(f"[INFO] Scene::Requested total splats: {total_splats}")
+            print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
+            print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
+            print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
         else:
             # Default: uniform distribution using num_splats
             num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-            print(f"[INFO] Using uniform distribution: {num_splats} splats per triangle")
+            print(f"[INFO] Scene::Fallback using uniform distribution: {num_splats} splats per triangle")
         # <<<< [SAM] Budgeting policy integration
         
         # Since this data set has no colmap data, we start with random points
