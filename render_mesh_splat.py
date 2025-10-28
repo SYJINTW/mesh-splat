@@ -110,12 +110,22 @@ if __name__ == "__main__":
     # >>>> [YC] add
     parser.add_argument("--texture_obj_path", type=str, default=None, help="Path to the textured obj file for mesh-based datasets.")
     parser.add_argument("--occlusion", action="store_true", help="Whether to use occlusion handling during rendering.")
-    parser.add_argument("--policy_path", type=str, default=None, help="Path to the splat density policy npy file.")
+    parser.add_argument("--policy_path", type=str, default="", help="Path to the splat density policy npy file.")
     # <<<< [YC] add
+    parser.add_argument("--total_splats", type=int, default=131_072, help="Total number of splats to allocate (default: 2^17=131072)")
+    parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
     
-    args = get_combined_args(parser)
+    
+    
+    args = get_combined_args(parser) # get args from both command line and stored file
     model.gs_type = args.gs_type
     model.num_splats = args.num_splats
+    
+    # >>>> [SAM] add
+    model.total_splats = args.total_splats
+    model.alloc_policy = args.alloc_policy
+    # <<<< [SAM] add
+    
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)

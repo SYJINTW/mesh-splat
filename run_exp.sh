@@ -3,7 +3,7 @@
 
 #!/bin/bash
 # set -e  # Remove this line to prevent script exit on error
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 # ====== Simple timers ======
 fmt_time() {
@@ -23,7 +23,7 @@ POLICIES=("planarity" "area" "rand_uni") # Add your policies here
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
 
-BASE_OUTPUT_DIR="output/1027_with_occ/${SCENE_NAME}"
+BASE_OUTPUT_DIR="output/1028_without_occ/${SCENE_NAME}"
 
 # Create the base output directory if it doesn't exist
 mkdir -p "$BASE_OUTPUT_DIR"
