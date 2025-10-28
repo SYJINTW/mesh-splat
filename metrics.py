@@ -67,7 +67,14 @@ def evaluate(gs_type, model_paths):
                 ssims = []
                 psnrs = []
                 lpipss = []
-
+                # TODO: also store these
+                # - scene names
+                # - #iterations
+                # - SH degree
+                # - #GS(budget)
+                # - policy name
+                # - file size (mesh + gs)
+                # - time to train/render
                 for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
                     ssims.append(ssim(renders[idx], gts[idx]))
                     psnrs.append(psnr(renders[idx], gts[idx]))
