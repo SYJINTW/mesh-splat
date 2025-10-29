@@ -1,6 +1,3 @@
-
-# [DONE] migrate script from DGM
-
 #!/bin/bash
 # set -e  # Remove this line to prevent script exit on error
 export CUDA_VISIBLE_DEVICES=1
@@ -15,7 +12,13 @@ total_exp_seconds=0
 failed_experiments=0
 
 # ======= Experiment Parameters ======
-BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
+
+### With occlusion-handling
+### see the log files to confirm
+
+
+# BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
+BUDGETS=(8192 908094 1572865) # increase \sqrt{3} times
 
 POLICIES=("planarity" "area" "rand_uni") # Add your policies here
 # POLICIES=("texture" "mse_mask")
@@ -23,7 +26,7 @@ POLICIES=("planarity" "area" "rand_uni") # Add your policies here
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
 
-BASE_OUTPUT_DIR="output/1028_without_occ/${SCENE_NAME}"
+BASE_OUTPUT_DIR="output/1027_with_occ/${SCENE_NAME}"
 
 # Create the base output directory if it doesn't exist
 mkdir -p "$BASE_OUTPUT_DIR"

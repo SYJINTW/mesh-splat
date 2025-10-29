@@ -1,8 +1,9 @@
 
 
-# [TODO] port this module from old codebase to here
-# [TODO] implement new policy: texture entropy, YC's error-map score
+# [DONE] port this module from old codebase to here
+# [TODO] implement new policy: texture entropy, YC's error-map/visual-quality-based score
 # [TODO] store policy result as .npy file alongside GS/Mesh for reproducibility and batch processing
+
 # ensure all of these run expectedly
 # then test out performance
 from abc import ABC, abstractmethod
@@ -133,11 +134,11 @@ def get_budgeting_policy(name: str, mesh=None) -> BudgetingPolicy:
         "area": AreaBasedBudgetingPolicy,
         "planarity": PlanarityBasedBudgetingPolicy,
         "texture": None,
+        "mse_mask": None,
         "from_file": None,
-        "mse_mask": None
     }
     try:
-        print(f"[INFO] Using budgeting policy: {name}")
+        print(f"[INFO] Budget::Using budgeting policy: {name}")
         return REGISTRY[name](mesh=mesh)
     except KeyError:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
@@ -304,7 +305,9 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     - focus='planar': more splats where neighborhood is planar (high MRL).
     """
     # [TODO] try different #hops
-    # seems like 1 or 2 give the best results
+    # 1 done
+    # 2
+    # 3
     
     # [TODO] what about planar focus, will that help? also test to find out
     
@@ -336,7 +339,7 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
                 # [TODO] could change 1-F_i to other types of inversion functions, e.g. exp(-k*F_i)
                 weights = np.maximum(1.0 - self.mrl, 1e-6)  # high on non-planar
                 
-            print(f"[INFO] PlanarityBasedBudgetingPolicy using focus='{self.focus}' with hops={self.hops}")
+            print(f"[INFO] Budget::PlanarityBasedBudgetingPolicy using focus='{self.focus}' with hops={self.hops}")
             
             
         return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
@@ -361,6 +364,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         min_per_tri: int,
         max_per_tri: int
     ) -> np.ndarray:
+        
+        # [TODO] logic is in train::warmup()
         pass
         # N = int(triangles.shape[0])
         # if self.distortion_map is None or len(self.distortion_map) != N:
@@ -470,7 +475,8 @@ class _TextureGradBasePolicy(BudgetingPolicy):
         return np.stack([a, b, c], axis=-1)
 
 
-    def _compute_triangle_texture_complexity(
+    def _compute_triangle_texture_complexity(\
+        self,
         mesh: trimesh.Trimesh,
         samples_per_tri: int = 16
     ) -> Optional[np.ndarray]:
@@ -479,7 +485,7 @@ class _TextureGradBasePolicy(BudgetingPolicy):
         Returns (F,) float32 or None if UV/texture unavailable.
         """
         # Need texture image and UVs
-        tex = _try_get_texture_image(mesh)
+        tex = self._try_get_texture_image(mesh)
         uvs = getattr(mesh.visual, "uv", None)
         faces = mesh.faces
 

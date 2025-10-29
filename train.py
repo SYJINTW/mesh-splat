@@ -377,11 +377,12 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                                     bg_color=bg, bg_depth=bg_depth,
                                     textured_mesh=textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
                 print("[INFO] train:: using occlusion-handling rasterizer for gs_mesh")
+                
             else: # [YC] use original diff-gaussian-rasterizer for training
                 render_pkg = render(viewpoint_cam, gaussians, pipe, 
                                     bg_color=bg, bg_depth=pure_bg_depth,
                                     textured_mesh=textured_mesh) # [YC] no occlusion handling, always use pure bg and pure depth
-                print("[INFO] train:: using vanila rasterizer for gs_mesh")
+                print("[INFO] train:: using vanilla rasterizer for gs_mesh")
                 
                 
         # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)

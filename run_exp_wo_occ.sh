@@ -3,7 +3,7 @@
 
 #!/bin/bash
 # set -e  # Remove this line to prevent script exit on error
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 # ====== Simple timers ======
 fmt_time() {
@@ -15,9 +15,9 @@ total_exp_seconds=0
 failed_experiments=0
 
 # ======= Experiment Parameters ======
-BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
+BUDGETS=(8192 16384 32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
 
-POLICIES=("planarity" "area" "rand_uni") # Add your policies here
+POLICIES=("planarity" "area" "rand_uni") # Add your polcies here
 # POLICIES=("texture" "mse_mask")
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed

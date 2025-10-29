@@ -45,11 +45,15 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             rendering = render(view, gaussians, pipeline, 
                             bg_color=None, bg_depth=None,
                             textured_mesh=textured_mesh)["render"] # [YC] using different rasterizer
+            print("\033[92m [INFO] train:: using occlusion-handling rasterizer for gs_mesh\033[0m")
+            
         else: # [YC] use original diff-gaussian-rasterizer for training
             pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
             rendering = render(view, gaussians, pipeline, 
                             bg_color=None, bg_depth=pure_bg_depth,
                             textured_mesh=textured_mesh)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
+            print("\033[96m [INFO] train:: using vanilla rasterizer for gs_mesh\033[0m")
+            
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))

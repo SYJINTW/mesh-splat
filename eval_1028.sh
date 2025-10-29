@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 
 
@@ -14,8 +14,7 @@ total_exp_seconds=0
 failed_experiments=0
 
 # ======= Experiment Parameters ======
-# BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288)
-BUDGETS=(8192 908094 1572865) # increase \sqrt{3} times
+BUDGETS=(8192 16384 32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
 POLICIES=("planarity" "area" "rand_uni")
 # POLICIES=("texture" "mse_mask")
 
@@ -24,8 +23,8 @@ POLICIES=("planarity" "area" "rand_uni")
 
 SCENE_NAME="hotdog"
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
-BASE_LOAD_DIR="output/1027_with_occ/${SCENE_NAME}"
-PLOT_DIR="output/1027_with_occ/for_plot"
+BASE_LOAD_DIR="output/1028_without_occ/${SCENE_NAME}"
+PLOT_DIR="output/1028_without_occ/for_plot"
 
 # Create the base output directory if it doesn't exist
 mkdir -p "$BASE_LOAD_DIR"
@@ -62,13 +61,14 @@ for policy in "${POLICIES[@]}"; do
         # ======= Step 1: Render ======
         echo "Step 1/3: Running render..." | tee -a "$LOG_FILE"
         render_start=$(date +%s)
-        
+
+
+        # NO --occlusion \
         if python render_mesh_splat.py \
             -m "$LOAD_DIR" \
             --gs_type gs_mesh \
             --skip_train \
             --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
-            --occlusion \
             --total_splats "$budget" \
             --alloc_policy "$policy" \
             2>&1 | tee -a "$LOG_FILE"; then
