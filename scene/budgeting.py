@@ -1,5 +1,3 @@
-
-
 # [DONE] port this module from old codebase to here
 # [TODO] implement new policy: texture entropy, YC's error-map/visual-quality-based score
 # [TODO] store policy result as .npy file alongside GS/Mesh for reproducibility and batch processing
@@ -8,12 +6,14 @@
 # then test out performance
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Dict
+from typing import Dict, Optional
+from functools import partial
 
 import numpy as np
 import torch
 import trimesh
-from typing import Optional
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import TexturesVertex
 
 
 
@@ -127,13 +127,31 @@ class RandomNormalBudgetingPolicy(BudgetingPolicy):
 
 
 def get_budgeting_policy(name: str, mesh=None) -> BudgetingPolicy:
+    
+    # [TODO] try different #hops
+    # 1 done
+    # 2
+    # 3
     REGISTRY: Dict[str, type] = {
         "uniform": UniformBudgetingPolicy,
         "rand_uni": RandomUniformBudgetingPolicy,
         "rand_norm": RandomNormalBudgetingPolicy,
         "area": AreaBasedBudgetingPolicy,
-        "planarity": PlanarityBasedBudgetingPolicy,
-        "texture": None,
+        
+        # [TODO] change this to the optimal candidate
+        "planarity": partial(PlanarityBasedBudgetingPolicy, hops=1), 
+        
+        # expose more interfaces instead of hardcoding and manually testing
+        "planarity1": partial(PlanarityBasedBudgetingPolicy, hops=1),
+        "planarity2": partial(PlanarityBasedBudgetingPolicy, hops=2),
+        "planarity3": partial(PlanarityBasedBudgetingPolicy, hops=3),
+        
+        # same, use partial to set focus
+        "texture": None, 
+        "texture_focus": None,
+        "texture_avoid": None,
+        
+        
         "mse_mask": None,
         "from_file": None,
     }
@@ -304,10 +322,7 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     - focus='nonplanar': more splats where neighborhood is non-planar (low MRL).
     - focus='planar': more splats where neighborhood is planar (high MRL).
     """
-    # [TODO] try different #hops
-    # 1 done
-    # 2
-    # 3
+    
     
     # [TODO] what about planar focus, will that help? also test to find out
     
@@ -377,7 +392,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
 
 
 
-class _TextureGradBasePolicy(BudgetingPolicy):
+# Texture gradient, or texture entropy, energy, complexity?
+class TextureGradPolicy(BudgetingPolicy):
     """
     texture policies using gradient-energy complexity over UVs.
     """
@@ -408,116 +424,4 @@ class _TextureGradBasePolicy(BudgetingPolicy):
             # Fallback to uniform if we can't compute texture complexity
             weights = np.ones((N,), dtype=np.float32)
         return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
-    
-    def _try_get_texture_image(mesh: trimesh.Trimesh) -> Optional[np.ndarray]:
-        """
-        Try to fetch a diffuse texture image (H,W,3) in float32 [0,1].
-        """
-        if mesh is None or mesh.visual is None:
-            return None
-
-        # Trimesh texture material path
-        try:
-            mat = getattr(mesh.visual, "material", None)
-            if mat is not None:
-                pil_img = getattr(mat, "image", None)
-                if pil_img is not None and Image is not None:
-                    # Ensure numpy array in [0,1]
-                    img = np.asarray(pil_img).astype(np.float32)
-                    if img.ndim == 2:
-                        img = np.stack([img, img, img], axis=-1)
-                    if img.shape[-1] == 4:
-                        # Drop alpha
-                        img = img[..., :3]
-                    if img.max() > 1.0:
-                        img = img / 255.0
-                    return img
-        except Exception:
-            pass
-
-        return None
-
-    def _to_grayscale(img: np.ndarray) -> np.ndarray:
-        if img.ndim == 2:
-            return img.astype(np.float32)
-        # Simple luma
-        r, g, b = img[..., 0], img[..., 1], img[..., 2]
-        gray = 0.299 * r + 0.587 * g + 0.114 * b
-        return gray.astype(np.float32)
-
-
-    def _gradient_magnitude(gray: np.ndarray) -> np.ndarray:
-        """
-        Approximate gradient magnitude using numpy gradients.
-        gray: (H,W) float32
-        returns (H,W) float32
-        """
-        gy, gx = np.gradient(gray)
-        mag = np.sqrt(gx * gx + gy * gy)
-        # Normalize to [0,1] for stability
-        mmax = mag.max()
-        if mmax > 0:
-            mag = mag / mmax
-        return mag.astype(np.float32)
-
-
-    def _sample_barycentric(n: int) -> np.ndarray:
-        """
-        Uniform samples over triangle via barycentric coords.
-        Returns (n,3) with rows summing to 1.
-        """
-        r1 = np.random.rand(n).astype(np.float32)
-        r2 = np.random.rand(n).astype(np.float32)
-        sqrt_r1 = np.sqrt(r1)
-        a = 1.0 - sqrt_r1
-        b = sqrt_r1 * (1.0 - r2)
-        c = sqrt_r1 * r2
-        return np.stack([a, b, c], axis=-1)
-
-
-    def _compute_triangle_texture_complexity(\
-        self,
-        mesh: trimesh.Trimesh,
-        samples_per_tri: int = 16
-    ) -> Optional[np.ndarray]:
-        """
-        Compute per-triangle complexity as mean gradient magnitude under UV sampling.
-        Returns (F,) float32 or None if UV/texture unavailable.
-        """
-        # Need texture image and UVs
-        tex = self._try_get_texture_image(mesh)
-        uvs = getattr(mesh.visual, "uv", None)
-        faces = mesh.faces
-
-        if tex is None or uvs is None or len(uvs) == 0:
-            return None
-
-        H, W = tex.shape[0], tex.shape[1]
-        gray = _to_grayscale(tex)
-        grad_mag = _gradient_magnitude(gray)
-
-        try:
-            face_uvs = uvs[faces]  # (F,3,2)
-        except Exception:
-            # Some meshes have per-face-vertex UVs with distinct indexing; fallback not implemented
-            return None
-
-        F = face_uvs.shape[0]
-        comp = np.zeros((F,), dtype=np.float32)
-
-        # Vectorized sampling per triangle (loop over faces to keep memory in check)
-        for i in range(F):
-            uv_tri = face_uvs[i]  # (3,2)
-            bary = _sample_barycentric(samples_per_tri)  # (K,3)
-            uv = bary @ uv_tri  # (K,2)
-            # uv is in [0,1]; map to pixel coords. V likely flipped in images.
-            x = np.clip(np.round(uv[:, 0] * (W - 1)).astype(np.int64), 0, W - 1)
-            y = np.clip(np.round((1.0 - uv[:, 1]) * (H - 1)).astype(np.int64), 0, H - 1)
-            comp[i] = float(grad_mag[y, x].mean())
-
-        # Normalize to [0,1]
-        cmax = comp.max()
-        if cmax > 0:
-            comp = comp / cmax
-        return comp
 
