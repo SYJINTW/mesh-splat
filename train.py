@@ -241,8 +241,13 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             policy_path
             # <<<< [YC] add
             ):
+    
+    
+    # --------------------------- Warm Up Stage -------------------------- #
+    
+    
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    #tb_writer = prepare_output_and_logger(dataset) # tensorboard writer, not used
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
     print("Training func policy_path:", policy_path)
         
@@ -255,7 +260,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     
     
     #! [YC] note: main changing point is here
-    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path,) 
+    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path,
+                  policy_file_path="" #[TODO]
+                  ) 
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -266,8 +273,15 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         check_path = Path(scene.model_path)/"debugging"/"training_check"
         check_path.mkdir(parents=True, exist_ok=True)
     
+    
+    # [NOTE] workaround
     # warmup(scene.getTrainCameras().copy(), textured_mesh)
-    # exit()
+      
+    print("Only run warmup, exiting...")
+    exit()
+    
+    
+    print("[INFO] Finished Warm-Up, Start Training..." )
     
     # Not sure why need to get background in this part
     # --------------------------- Load background image -------------------------- #

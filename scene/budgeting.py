@@ -19,6 +19,7 @@ from mesh_renderer_pytorch3d import mesh_renderer_pytorch3d
 import cv2
 import os 
 import matplotlib.cm as cm
+from scene.cameras import Camera
 
 
 
@@ -167,6 +168,13 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
     except KeyError:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
 
+def save_allocation_result(policy: BudgetingPolicy, filepath: str):
+    """
+    Save the budgeting policy object to a file using numpy's savez.
+    Note: This is a simple serialization; for complex policies, consider using pickle or custom serialization.
+    """
+    np.savez_compressed(filepath, policy=policy)
+    print(f"[INFO] Budget::Saved budgeting policy to {filepath}")
 
 
 def _bounded_proportional_allocate(
@@ -379,9 +387,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
     def __init__(
         self, 
         mesh: Optional[trimesh.Trimesh],
-        viewpoint_cameras=None,
+        viewpoint_cameras =None, # pass in CamInfo, get Camera later
         dataset_path: str = None,
-        mesh_renderer=None,
         image_height: int = 800,
         image_width: int = 800,
         faces_per_pixel: int = 1,
@@ -391,7 +398,6 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         super().__init__(mesh)
         self.viewpoint_cameras = viewpoint_cameras
         self.dataset_path = dataset_path
-        self.mesh_renderer = mesh_renderer
         self.image_height = image_height
         self.image_width = image_width
         self.faces_per_pixel = faces_per_pixel
@@ -399,8 +405,15 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         self.debugging = debugging
         self.distortion_weights: Optional[np.ndarray] = None
         
-        assert mesh is not None, "Missing Mesh "
-        assert viewpoint_cameras is not None, "Missing CamInfos "
+        assert mesh is not None, "DistorsionMapPolicy::Missing Mesh "
+        assert viewpoint_cameras is not None and len(viewpoint_cameras) != 0, "DistorsionMapPolicy::Missing CamInfos"
+        assert isinstance(viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
+        
+        # [TODO] how to get train_cameras to here?
+        # Only compute if we have proper Camera objects
+        self.distortion_weights = self._compute_distortion_weights()
+        
+        
         self.distortion_weights = self._compute_distortion_weights()
 
     def _load_with_white_bg(self, path):
@@ -434,8 +447,10 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print("[WARNING] DistortionMapBudgetingPolicy: Missing mesh or cameras")
             return None
         
+        print("[INFO] DistortionMapBudgetingPolicy:: Computing distortion weights...")
+        
         # Convert trimesh to PyTorch3D meshes
-        verts = torch.tenso1(self.mesh.vertices, dtype=torch.float32, device=self.device)
+        verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
         faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
         
         # Create mesh for rasterization (white texture for face indexing)
@@ -445,13 +460,14 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         # Load textured mesh for rendering
         if self.dataset_path:
-            mesh_path = os.path.join(self.dataset_path, "mesh.obj")
+            mesh_path = f"{self.dataset_path}/mesh.obj"
             if os.path.exists(mesh_path):
                 p3d_mesh = load_objs_as_meshes([mesh_path]).to(self.device)
             else:
                 print(f"[WARNING] Textured mesh not found at {mesh_path}, using white Trimesh mesh")
                 p3d_mesh = tm2p3d_mesh
         else:
+            print("[WARNING] No dataset_path provided, using white mesh")
             p3d_mesh = tm2p3d_mesh
         
         num_faces = faces.shape[0]
@@ -459,15 +475,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
             # Load ground truth image
-            if self.dataset_path:
-                gt_image_path = os.path.join(
-                    self.dataset_path, 
-                    "mesh_texture", 
-                    f"{viewpoint_camera.image_name}.png"
-                )
-            else:
-                print("[WARNING] No dataset_path provided, skipping distortion computation")
-                return None
+            gt_image_path = f"{self.dataset_path}/mesh_texture/{viewpoint_camera.image_name}.png"
                 
             if not os.path.exists(gt_image_path):
                 print(f"[WARNING] Ground truth image not found: {gt_image_path}")
@@ -476,30 +484,26 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             gt_img = self._load_with_white_bg(gt_image_path)
             
             # Render textured mesh
-            if self.mesh_renderer is not None:
-                p3d_mesh_color, _, _ = self.mesh_renderer(
-                    viewpoint_camera, p3d_mesh,
-                    image_height=self.image_height,
-                    image_width=self.image_width,
-                    faces_per_pixel=self.faces_per_pixel,
-                    device=self.device
-                )
-                
-                # Convert to numpy
-                p3d_mesh_color_np = (
-                    p3d_mesh_color[0, ..., :3]
-                    .detach().cpu().numpy()
-                )
-                p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
-            else:
-                print("[WARNING] No mesh_renderer provided, skipping view")
-                continue
+            p3d_mesh_color, _, _ = mesh_renderer_pytorch3d(
+                viewpoint_camera, p3d_mesh,
+                image_height=self.image_height,
+                image_width=self.image_width,
+                faces_per_pixel=self.faces_per_pixel,
+                device=self.device
+            )
+            
+            # Convert to numpy
+            p3d_mesh_color_np = (
+                p3d_mesh_color[0, ..., :3]
+                .detach().cpu().numpy()
+            )
+            p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
             
             # Compute per-pixel absolute difference map
             dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # [H, W]
             
             # Render face indices
-            _, _, tm2p3d_fragments = self.mesh_renderer(
+            _, _, tm2p3d_fragments = mesh_renderer_pytorch3d(
                 viewpoint_camera, tm2p3d_mesh,
                 image_height=self.image_height,
                 image_width=self.image_width,
