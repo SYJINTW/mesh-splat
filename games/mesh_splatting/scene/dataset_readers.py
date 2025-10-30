@@ -52,7 +52,7 @@ def readNerfSyntheticMeshInfo(
         min_splats_per_tri: int = 0,
         max_splats_per_tri: int = 8,
         # <<<< [SAM] add
-):
+) -> SceneInfo:
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
     print("Reading Test Transforms")
@@ -253,6 +253,7 @@ def readNerfSyntheticMeshInfo(
         # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
         # storePly(ply_path, pcd.points, colors)
 
+    print(f"[DEBUG] DatasetReader:: ply_path={ply_path}")
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,

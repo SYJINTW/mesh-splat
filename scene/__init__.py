@@ -34,7 +34,7 @@ class Scene:
         """b
         :param path: Path to colmap scene main folder.
         """
-        print("Scene init policy_path:", policy_path) # [YC] debug
+        print("[INFO] Scene::init() policy_path:", policy_path) # [YC] debug
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
@@ -70,6 +70,8 @@ class Scene:
                 # Our main experiments use this path
                 # here the budgeting policy and texture obj path are passed
                 
+                
+                # [SAM] [TODO] add typing here after taking a break
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
@@ -99,6 +101,7 @@ class Scene:
                     with open(ply_path, 'rb') as src_file, open(os.path.join(self.model_path, f"input_{i}.ply") , 'wb') as dest_file:
                         dest_file.write(src_file.read())
             else:
+                print(f"[DEBUG] Scene:: Copying from ply file {scene_info.ply_path} to {os.path.join(self.model_path, f'input.ply')}") # [SAM] debug
                 with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                     dest_file.write(src_file.read())
             json_cams = []

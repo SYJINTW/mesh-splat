@@ -1,5 +1,4 @@
 # [DONE] port this module from old codebase to here
-# [TODO] implement new policy: texture entropy, YC's error-map/visual-quality-based score
 # [TODO] store policy result as .npy file alongside GS/Mesh for reproducibility and batch processing
 
 # ensure all of these run expectedly
