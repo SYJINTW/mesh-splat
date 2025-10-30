@@ -17,7 +17,7 @@ failed_experiments=0
 # ======= Experiment Parameters ======
 BUDGETS=(8192 16384 32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
 
-POLICIES=("planarity" "area" "rand_uni") # Add your polcies here
+POLICIES=("planarity" "area" "random" "uniform") # Add your polcies here
 # POLICIES=("texture" "mse_mask")
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed

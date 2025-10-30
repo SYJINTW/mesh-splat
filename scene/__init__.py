@@ -13,6 +13,7 @@ import os
 import random
 import json
 import typing
+
 from utils.system_utils import searchForMaxIteration
 from games.scenes import sceneLoadTypeCallbacks
 from games.mesh_splatting.scene.gaussian_mesh_model import GaussianMeshModel
@@ -65,7 +66,7 @@ class Scene:
             
             if args.gs_type == "gs_mesh": #! [YC] need to be aware of gs_type
                 
-                print("Found transforms_train.json file, assuming Blender_Mesh data set!")
+                print("Found transforms_train.json file, assuming Blender_Mesh dataset!")
                 
                 # Our main experiments use this path
                 # here the budgeting policy and texture obj path are passed
@@ -92,8 +93,10 @@ class Scene:
         else:
             assert False, "Could not recognize scene type!"
             
-            
-            
+        
+        # save a copy of allocation result into output dir 
+        if os.path.exists(os.path.join(self.model_path, "cameras.json")):
+            pass    
         # ====== Load Cameras and PLY files ======
         if not self.loaded_iter:
             if args.gs_type == "gs_multi_mesh":
@@ -101,7 +104,7 @@ class Scene:
                     with open(ply_path, 'rb') as src_file, open(os.path.join(self.model_path, f"input_{i}.ply") , 'wb') as dest_file:
                         dest_file.write(src_file.read())
             else:
-                print(f"[DEBUG] Scene:: Copying from ply file {scene_info.ply_path} to {os.path.join(self.model_path, f'input.ply')}") # [SAM] debug
+                # print(f"[DEBUG] Scene:: Copying from ply file {scene_info.ply_path} to {os.path.join(self.model_path, f'input.ply')}")
                 with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                     dest_file.write(src_file.read())
             json_cams = []

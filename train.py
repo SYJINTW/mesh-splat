@@ -247,7 +247,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     
     
     first_iter = 0
-    #tb_writer = prepare_output_and_logger(dataset) # tensorboard writer, not used
+    tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
     print("Training func policy_path:", policy_path)
         
@@ -547,7 +547,7 @@ def prepare_output_and_logger(args):
         args.model_path = os.path.join("./output/", unique_str[0:10])
 
     # Set up output folder
-    print("Output folder: {}".format(args.model_path))
+    print("[INFO] Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok=True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
@@ -557,7 +557,7 @@ def prepare_output_and_logger(args):
     if TENSORBOARD_FOUND:
         tb_writer = SummaryWriter(args.model_path)
     else:
-        print("Tensorboard not available: not logging progress")
+        print("[INFO] Tensorboard not available: not logging progress")
     return tb_writer
 
 

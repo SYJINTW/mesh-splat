@@ -39,6 +39,76 @@ def transform_vertices_function(vertices, c=1):
     vertices *= c
     return vertices
 
+def get_num_splats_per_triangle(
+    triangles, # [N,3,3]
+    mesh_scene,
+    train_cam_infos,
+    path,
+    num_splats,
+    policy_path: str = None,
+    total_splats: int = None,
+    budgeting_policy_name: str = "uniform",
+    min_splats_per_tri: int = 0,
+    max_splats_per_tri: int = 8,
+)-> np.ndarray: # [N,], number of splats on each triangle
+        
+    # load num_splats allocation policy from pre-computed file
+    if policy_path is not None and policy_path != "":
+        
+        allocation_path = Path(policy_path) # path to the .npy file storing splat allocation
+        # num_splats[]
+        # scene_name
+        # min, max
+        
+        if allocation_path.exists(): 
+            print(f"[INFO] Loading splat allocation from: {allocation_path}")
+            num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
+            print("Initial max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+            num_splats_per_triangle = np.load(allocation_path)
+            print("[INFO] Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+        else:
+            print(f"[WARNING] No splat allocation found at: {allocation_path}, fallback to uniform allocation")
+            num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+            
+            
+    # Use budgeting policy
+    elif total_splats is not None:
+        # [TODO] integrate error-map-based splat allocation
+        
+        
+        print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
+        budgeting_policy = get_budgeting_policy(
+            budgeting_policy_name, 
+            mesh=mesh_scene,
+            viewpoint_camera_infos=train_cam_infos,
+            dataset_path=path,
+            )
+        
+        num_splats_per_triangle = budgeting_policy.allocate(
+            triangles=triangles,
+            total_splats=total_splats,
+            min_per_tri=min_splats_per_tri,
+            max_per_tri=max_splats_per_tri,
+        )
+        
+        print(f"[INFO] Scene::Requested total splats: {total_splats}")
+        print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
+        print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
+        print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
+        
+        
+        # under {dataset_path}/policy
+        allocation_save_path = Path(path)/ f"policy/{budgeting_policy_name}_{total_splats}.npy"
+        print(f"[INFO] Scene::Saving splat allocation to: {allocation_save_path}")
+        np.save(allocation_save_path, num_splats_per_triangle)
+        
+    else:
+        # Default: uniform distribution using num_splats
+        num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+        print(f"[INFO] Scene::Fallback using uniform distribution: {num_splats} splats per triangle")
+
+    return num_splats_per_triangle
+
 
 def readNerfSyntheticMeshInfo(
         path, white_background, eval, num_splats, extension=".png",
@@ -101,68 +171,28 @@ def readNerfSyntheticMeshInfo(
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = os.path.join(path, "points3d.ply")
+    ply_path = os.path.join(path, "points3d.ply") # What is this points3d.ply? COLMAP data, generated point cloud, or just placeholder?
     print("ply_path:", ply_path)
     
     # if not os.path.exists(ply_path):
     if True:
+        
         # >>>> [SAM] Budgeting policy integration
-        # Determine allocation strategy
-        if policy_path is not None and policy_path != "":
-            # [TODO]: load from file
-            # [TODO] integrate error-map-based splat allocation
-            
-            allocation_path = Path(policy_path) # path to the .npy file storing splat allocation
-            # num_splats[]
-            # scene_name
-            # min, max
-            
-            if allocation_path.exists(): 
-                print("Loading splat allocation from:", allocation_path)
-                num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
-                print("Initial max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-                num_splats_per_triangle = np.load(allocation_path)
-                print("Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-            else:
-                print("No splat allocation found at:", allocation_path)
-                num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-                
-                
-        elif total_splats is not None:
-            # Use budgeting policy
-            print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
-            budgeting_policy = get_budgeting_policy(
-                budgeting_policy_name, 
-                mesh=mesh_scene,
-                viewpoint_camera_infos=train_cam_infos,
-                dataset_path=path,
-                )
-            
-            num_splats_per_triangle = budgeting_policy.allocate(
-                triangles=triangles,
-                total_splats=total_splats,
-                min_per_tri=min_splats_per_tri,
-                max_per_tri=max_splats_per_tri,
-            )
-            
-            print(f"[INFO] Scene::Requested total splats: {total_splats}")
-            print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
-            print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
-            print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
-            
-            
-            # under {dataset_path}/policy
-            allocation_save_path = Path(path)/ f"policy/{budgeting_policy_name}_{total_splats}.npy"
-            print(f"[INFO] Scene::Saving splat allocation to: {allocation_save_path}")
-            np.save(allocation_save_path, num_splats_per_triangle)
-            
-        else:
-            # Default: uniform distribution using num_splats
-            num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-            print(f"[INFO] Scene::Fallback using uniform distribution: {num_splats} splats per triangle")
+        num_splats_per_triangle = get_num_splats_per_triangle(
+            triangles=triangles,
+            mesh_scene=mesh_scene,
+            train_cam_infos=train_cam_infos,
+            path=path,
+            num_splats=num_splats,
+            policy_path=policy_path,
+            total_splats=total_splats,
+            budgeting_policy_name=budgeting_policy_name,
+            min_splats_per_tri=min_splats_per_tri,
+            max_splats_per_tri=max_splats_per_tri,
+        )
         # <<<< [SAM] Budgeting policy integration
         
-        # Since this data set has no colmap data, we start with random points
+        # Since this data set has no colmap data, we start with random points sampled on the mesh surface
         num_pts = num_splats_per_triangle.sum()
         print(f"Generating random point cloud ({num_pts})...")
         print(f"Average points per triangle: {num_pts / triangles.shape[0] if triangles.shape[0] > 0 else 0}...")
@@ -253,7 +283,6 @@ def readNerfSyntheticMeshInfo(
         # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
         # storePly(ply_path, pcd.points, colors)
 
-    print(f"[DEBUG] DatasetReader:: ply_path={ply_path}")
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,

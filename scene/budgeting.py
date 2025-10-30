@@ -76,7 +76,6 @@ class AreaBasedBudgetingPolicy(BudgetingPolicy):
 
 class UniformBudgetingPolicy(BudgetingPolicy):
     """
-    [Deprecated] use RandomUniformBudgetingPolicy instead.
     Allocates a uniform number of points to each triangle.
     """
     def __init__(self, mesh=None, **kwargs):
@@ -97,7 +96,7 @@ class UniformBudgetingPolicy(BudgetingPolicy):
 
 class RandomUniformBudgetingPolicy(BudgetingPolicy):
     """
-    Allocates a uniform number of points to each triangle.
+    Allocates points to triangles based on weights randomly sampled from Uniform(0,1).
     """
     def __init__(self, mesh=None, **kwargs):
         super().__init__(mesh, **kwargs)
@@ -141,9 +140,9 @@ class RandomNormalBudgetingPolicy(BudgetingPolicy):
 def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
     
     REGISTRY: Dict[str, type] = {
-        "uniform": UniformBudgetingPolicy,
-        "rand_uni": RandomUniformBudgetingPolicy,
-        "rand_norm": RandomNormalBudgetingPolicy,
+        "uniform": UniformBudgetingPolicy, 
+        "random": RandomUniformBudgetingPolicy, # turns out to be better than naive Uniform
+        # "rand_norm": RandomNormalBudgetingPolicy,
         "area": AreaBasedBudgetingPolicy,
         
         # [TODO] try different #hops, then change this to the optimal candidate
