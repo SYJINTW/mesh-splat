@@ -21,13 +21,16 @@ import os
 import matplotlib.cm as cm
 from scene.cameras import Camera
 
+from utils.camera_utils import cameraList_from_camInfos
+
+
 
 
 class BudgetingPolicy(ABC):
     """
     Abstract Base Class of budgeting policies for training.
     """
-    def __init__(self, mesh=None):
+    def __init__(self, mesh=None, **kwargs):  # accept and ignore extra keyword arguments
         # some policies might not need mesh
         self.mesh = mesh
 
@@ -49,13 +52,15 @@ class BudgetingPolicy(ABC):
         # could be used in render/post-processing
         pass
 
+
+
 class AreaBasedBudgetingPolicy(BudgetingPolicy):
     """
     Allocates points to triangles based on their surface area.
     Larger triangles get more points.
     """
-    def __init__(self, mesh=None):
-        super().__init__(mesh)
+    def __init__(self, mesh=None, **kwargs):
+        super().__init__(mesh, **kwargs)
 
     def allocate(
         self,
@@ -75,8 +80,8 @@ class UniformBudgetingPolicy(BudgetingPolicy):
     [Deprecated] use RandomUniformBudgetingPolicy instead.
     Allocates a uniform number of points to each triangle.
     """
-    def __init__(self, mesh=None):
-        super().__init__(mesh)
+    def __init__(self, mesh=None, **kwargs):
+        super().__init__(mesh, **kwargs)
 
     def allocate(
         self,
@@ -95,8 +100,8 @@ class RandomUniformBudgetingPolicy(BudgetingPolicy):
     """
     Allocates a uniform number of points to each triangle.
     """
-    def __init__(self, mesh=None):
-        super().__init__(mesh)
+    def __init__(self, mesh=None, **kwargs):
+        super().__init__(mesh, **kwargs)
 
     def allocate(
         self,
@@ -116,8 +121,8 @@ class RandomNormalBudgetingPolicy(BudgetingPolicy):
     """
     Allocates a uniform number of points to each triangle.
     """
-    def __init__(self, mesh=None):
-        super().__init__(mesh)
+    def __init__(self, mesh=None, **kwargs):
+        super().__init__(mesh, **kwargs)
 
     def allocate(
         self,
@@ -167,14 +172,6 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         return policy_class(mesh=mesh, **kwargs)
     except KeyError:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
-
-def save_allocation_result(policy: BudgetingPolicy, filepath: str):
-    """
-    Save the budgeting policy object to a file using numpy's savez.
-    Note: This is a simple serialization; for complex policies, consider using pickle or custom serialization.
-    """
-    np.savez_compressed(filepath, policy=policy)
-    print(f"[INFO] Budget::Saved budgeting policy to {filepath}")
 
 
 def _bounded_proportional_allocate(
@@ -284,8 +281,8 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     - focus='planar': more splats where neighborhood is planar (high MRL).
     """
     
-    def __init__(self, mesh: Optional[trimesh.Trimesh], hops: int = 1, focus: str = "nonplanar"):
-        self.mesh = mesh
+    def __init__(self, mesh: Optional[trimesh.Trimesh], hops: int = 1, focus: str = "nonplanar", **kwargs):
+        super().__init__(mesh, **kwargs)
         self.hops = int(max(0, hops))
         self.focus = focus.lower()
         self.mrl: Optional[np.ndarray] = None
@@ -387,16 +384,17 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
     def __init__(
         self, 
         mesh: Optional[trimesh.Trimesh],
-        viewpoint_cameras =None, # pass in CamInfo, get Camera later
+        viewpoint_camera_infos=None,  # pass in CamInfo, get Camera later
         dataset_path: str = None,
         image_height: int = 800,
         image_width: int = 800,
         faces_per_pixel: int = 1,
         device: str = "cuda",
-        debugging: bool = True
+        debugging: bool = True,
+        **kwargs
     ):
-        super().__init__(mesh)
-        self.viewpoint_cameras = viewpoint_cameras
+        super().__init__(mesh, **kwargs)
+        self.viewpoint_camera_infos = viewpoint_camera_infos
         self.dataset_path = dataset_path
         self.image_height = image_height
         self.image_width = image_width
@@ -404,16 +402,18 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         self.device = device
         self.debugging = debugging
         self.distortion_weights: Optional[np.ndarray] = None
-        
+
         assert mesh is not None, "DistorsionMapPolicy::Missing Mesh "
-        assert viewpoint_cameras is not None and len(viewpoint_cameras) != 0, "DistorsionMapPolicy::Missing CamInfos"
-        assert isinstance(viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
-        
-        # [TODO] how to get train_cameras to here?
-        # Only compute if we have proper Camera objects
-        self.distortion_weights = self._compute_distortion_weights()
-        
-        
+        assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
+
+        # Build Camera objects
+        self.viewpoint_cameras = cameraList_from_camInfos(
+            self.viewpoint_camera_infos, resolution_scale=1.0, 
+            args={"resolution": 1, "data_device": device}
+        )
+        assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
+
+        # Compute distortion weights
         self.distortion_weights = self._compute_distortion_weights()
 
     def _load_with_white_bg(self, path):

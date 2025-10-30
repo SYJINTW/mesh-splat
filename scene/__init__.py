@@ -12,8 +12,11 @@
 import os
 import random
 import json
+import typing
 from utils.system_utils import searchForMaxIteration
 from games.scenes import sceneLoadTypeCallbacks
+from games.mesh_splatting.scene.gaussian_mesh_model import GaussianMeshModel
+ 
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
@@ -124,10 +127,10 @@ class Scene:
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
         for resolution_scale in resolution_scales:
-            print("Loading Training Cameras")
+            print("Scene:: Loading Training Cameras from camInfos at scale ", resolution_scale)
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
             # print(self.train_cameras[resolution_scale][0].uid) # [YC] debug
-            print("Loading Test Cameras")
+            print("Scene:: Loading Test Cameras from camInfos at scale ", resolution_scale)
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
         # [YC] [NOTE] Load GS scene (ply file) for rendering

@@ -111,17 +111,20 @@ def readNerfSyntheticMeshInfo(
         if policy_path is not None and policy_path != "":
             # [TODO]: load from file
             # [TODO] integrate error-map-based splat allocation
-            filter_path = Path(policy_path)
-            if filter_path.exists(): 
-                print("Loading splat filter from:", filter_path)
+            
+            allocation_path = Path(policy_path) # path to the .npy file storing splat allocation
+            # num_splats[]
+            # scene_name
+            # min, max
+            
+            if allocation_path.exists(): 
+                print("Loading splat allocation from:", allocation_path)
                 num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
-                print("Initial Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-                loaded_filter = np.load(filter_path)
-                print("Filter Max and min:", loaded_filter.max(), loaded_filter.min())
-                num_splats_per_triangle = num_splats_per_triangle * loaded_filter
+                print("Initial max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+                num_splats_per_triangle = np.load(allocation_path)
                 print("Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
             else:
-                print("No splat filter found at:", filter_path)
+                print("No splat allocation found at:", allocation_path)
                 num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
                 
                 
@@ -131,7 +134,7 @@ def readNerfSyntheticMeshInfo(
             budgeting_policy = get_budgeting_policy(
                 budgeting_policy_name, 
                 mesh=mesh_scene,
-                viewpoint_cameras=train_cam_infos,
+                viewpoint_camera_infos=train_cam_infos,
                 dataset_path=path,
                 )
             
@@ -146,6 +149,13 @@ def readNerfSyntheticMeshInfo(
             print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
             print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
             print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
+            
+            
+            # under {dataset_path}/policy
+            allocation_save_path = Path(path)/ f"policy/{budgeting_policy_name}_{total_splats}.npy"
+            print(f"[INFO] Scene::Saving splat allocation to: {allocation_save_path}")
+            np.save(allocation_save_path, num_splats_per_triangle)
+            
         else:
             # Default: uniform distribution using num_splats
             num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)

@@ -260,9 +260,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     
     
     #! [YC] note: main changing point is here
-    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path,
-                  policy_file_path="" #[TODO]
-                  ) 
+    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -277,8 +275,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     # [NOTE] workaround
     # warmup(scene.getTrainCameras().copy(), textured_mesh)
       
-    print("Only run warmup, exiting...")
-    exit()
+    # print("Only run warmup, exiting...")
+    # exit()
     
     
     print("[INFO] Finished Warm-Up, Start Training..." )
@@ -630,7 +628,7 @@ if __name__ == "__main__":
     parser.add_argument('--debugging', action='store_true')
     parser.add_argument('--debug_freq', type=int, default=1, help="Iteration of saving debugging images")
     parser.add_argument('--occlusion', action='store_true')
-    parser.add_argument('--policy_path', type=str, default="")
+    parser.add_argument('--policy_path', type=str, default="") # higher priority than --alloc_policy
     # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     # <<<< [YC] add
     
