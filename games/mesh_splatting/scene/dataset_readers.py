@@ -63,16 +63,13 @@ def get_num_splats_per_triangle(
             
     # Use budgeting policy, computing on-the-fly
     elif total_splats is not None:
-        # [TODO] integrate error-map-based splat allocation
-        # pass camera into the allocator somehow
-        
         print(f"[INFO] no pre-computed policy found")
         print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
 
         budgeting_policy = get_budgeting_policy(
             budgeting_policy_name,
             mesh=mesh_scene,
-            viewpoint_camera_infos=train_cam_infos,
+            viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
             dataset_path=path,
         )
 

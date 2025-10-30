@@ -469,6 +469,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         num_faces = faces.shape[0]
         dist_map_all = np.zeros(num_faces, dtype=np.float32)
+        per_view_debug = [] if self.debugging else None  # collect per-view artifacts for debugging
         
         for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
             # Load ground truth image
@@ -531,9 +532,19 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             
             # Accumulate distortion across views
             dist_map_all += mean_dist
+
+            # Collect per-view debugging artifacts
+            if per_view_debug is not None:
+                per_view_debug.append({
+                    "index": idx,
+                    "image_name": getattr(viewpoint_camera, "image_name", f"view_{idx}"),
+                    "render": p3d_mesh_color_np,  # RGB in [0,1]
+                    "gt": gt_img,                 # RGB in [0,1]
+                    "dist_map": dist_map          # [H,W] in [0,1]
+                })
         
         if self.debugging:
-            self._save_debug_visualization(dist_map_all)
+            self._save_debug_visualization(dist_map_all, per_view_debug)
         
         # Normalize to [0, 1] and ensure positive weights
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
@@ -541,13 +552,104 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         return np.maximum(dist_norm, 1e-6).astype(np.float32)
 
-    def _save_debug_visualization(self, dist_map_all: np.ndarray):
-        """Save distortion map as colored point cloud for visualization."""
+    @staticmethod
+    def _standardize_image_to_hwc3(arr, H: int, W: int) -> np.ndarray:
+        """
+        Convert various array shapes to float32 RGB in [0,1] with shape (H, W, 3).
+        Handles:
+        - (H, W, 3) or (H, W, 4)
+        - (3, H, W) or (4, H, W)
+        - (H*W, 3) or (3, H*W)
+        - (H, 3) or (W, 3) (only if H==W; best-effort)
+        """
+        img = np.asarray(arr)
+        if img.dtype == np.uint8:
+            img = img.astype(np.float32) / 255.0
+        else:
+            img = img.astype(np.float32)
+            # if values look like 0..255, normalize
+            if img.max() > 1.5:
+                img = img / 255.0
+
+        # 3D inputs
+        if img.ndim == 3:
+            # HWC
+            if img.shape[:2] == (H, W):
+                if img.shape[2] >= 3:
+                    return img[..., :3]
+            # CHW
+            if img.shape[0] in (3, 4) and img.shape[1] in (H, W) and img.shape[2] in (H, W):
+                chw = img
+                hwc = np.transpose(chw, (1, 2, 0))
+                return hwc[..., :3]
+
+        # 2D inputs
+        if img.ndim == 2:
+            h2, w2 = img.shape
+            # Flattened list of pixels: (H*W, 3)
+            if h2 == H * W and w2 == 3:
+                return img.reshape(H, W, 3)
+            # Transposed flattened: (3, H*W)
+            if h2 == 3 and w2 == H * W:
+                return img.T.reshape(H, W, 3)
+            # Degenerate (H, 3) or (W, 3) — best effort if square
+            if w2 == 3 and (h2 == H or h2 == W) and H == W:
+                try:
+                    return img.reshape(H, H, 3)
+                except Exception:
+                    pass
+
+        # 1D fallback: try total-size reshape
+        if img.ndim == 1 and img.size == H * W * 3:
+            return img.reshape(H, W, 3)
+
+        # Last-chance generic flatten -> reshape if size matches
+        if img.size == H * W * 3:
+            return img.ravel().reshape(H, W, 3)
+
+        raise ValueError(f"Unrecognized render shape: {getattr(arr, 'shape', None)} (expected compatible with {H}x{W}x3)")
+
+    def _save_debug_visualization(self, dist_map_all: np.ndarray, per_view_debug=None):
+        """Save distortion map debug artifacts: per-view renders, heatmaps, and colored point cloud."""
         try:
             import matplotlib.cm as cm
+            import matplotlib.pyplot as plt
             import open3d as o3d
-            
-            # Normalize for colormap
+
+            base_dir = "./debug_distortion"
+            heatmap_dir = os.path.join(base_dir, "heatmap")
+            mesh_bg_dir = os.path.join(base_dir, "mesh_bg")
+            os.makedirs(heatmap_dir, exist_ok=True)
+            os.makedirs(mesh_bg_dir, exist_ok=True)
+
+            # 1) Per-view artifacts
+            if per_view_debug is not None:
+                for item in per_view_debug:
+                    name = str(item.get("image_name", f"view_{item.get('index', 0)}"))
+                    # Save rendered mesh background
+                    try:
+                        H, W = self.image_height, self.image_width
+                        img = self._standardize_image_to_hwc3(item["render"], H, W)
+                        render_rgb = np.clip(img, 0.0, 1.0)
+                        render_bgr = (render_rgb[..., ::-1] * 255.0).astype(np.uint8)  # RGB->BGR
+                        cv2.imwrite(os.path.join(mesh_bg_dir, f"{name}.png"), render_bgr)
+                    except Exception as e:
+                        print(f"[WARNING] Could not save render for {name}: {e} (got {getattr(item['render'], 'shape', None)})")
+
+                    # Save heatmap (normalized)
+                    try:
+                        dm = item["dist_map"].astype(np.float32)
+                        dm_norm = dm / (np.max(dm) + 1e-8)
+                        plt.figure(figsize=(6, 6))
+                        plt.imshow(dm_norm, cmap='hot', vmin=0.0, vmax=1.0)
+                        plt.axis('off')
+                        plt.tight_layout(pad=0)
+                        plt.savefig(os.path.join(heatmap_dir, f"{name}.png"), dpi=200, bbox_inches='tight', pad_inches=0)
+                        plt.close()
+                    except Exception as e:
+                        print(f"[WARNING] Could not save heatmap for {name}: {e}")
+
+            # 2) Global PLY with per-vertex colors aggregated from per-face distortion
             dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.ptp() + 1e-8)
             cmap = cm.get_cmap('jet')
             colors = cmap(dist_norm)[:, :3]  # (num_faces, 3), RGB in [0,1]
@@ -556,7 +658,6 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             vertex_colors = np.zeros((len(self.mesh.vertices), 3))
             for f_id, verts in enumerate(self.mesh.faces):
                 vertex_colors[verts] += colors[f_id]
-                
             counts = np.bincount(self.mesh.faces.flatten(), minlength=len(self.mesh.vertices))
             vertex_colors /= np.maximum(counts[:, None], 1e-8)
 
@@ -566,9 +667,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             pcd.colors = o3d.utility.Vector3dVector(vertex_colors)
 
             # Save as PLY
-            output_path = "./debug_distortion_heatmap.ply"
+            output_path = os.path.join(base_dir, "distortion_heatmap.ply")
             o3d.io.write_point_cloud(output_path, pcd)
-            print(f"[INFO] Saved distortion heatmap to {output_path}")
+            print(f"[INFO] Saved distortion debug to {base_dir}")
         except Exception as e:
             print(f"[WARNING] Could not save debug visualization: {e}")
 

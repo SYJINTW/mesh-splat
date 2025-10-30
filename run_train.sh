@@ -5,10 +5,10 @@ CUDA_VISIBLE_DEVICES=0
 
 
 # BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
-BUDGET=(185364) # Add your budgets here
+BUDGET=(1572865) # Add your budgets here
 
-# POLICIES=("planarity" "area" "uniform" "rand_uni") # Add your policies here
-POLICY=("area") # Add your policies here
+# POLICIES=("planarity" "area" "uniform" "random") # Add your policies here
+POLICY=("distortion") # Add your policies here
 
 LOG_FILE="train.log"
 SCENE_NAME="hotdog" # or other NeRF scene name
@@ -39,8 +39,7 @@ python train.py --eval \
 --alloc_policy "$POLICY" \
 --gs_type gs_mesh -w --iteration 10 >> "$LOG_FILE"
 
-# --policy_path "$DATASET_DIR/policy/$POLICY_$BUDGET.npy" \
-
+# --policy_path "$DATASET_DIR/policy/${POLICY}_${BUDGET}.npy" \
 
 
 cp $LOG_FILE "$SAVE_DIR/$LOG_FILE"

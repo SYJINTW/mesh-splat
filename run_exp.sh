@@ -17,16 +17,15 @@ failed_experiments=0
 ### see the log files to confirm
 
 
-# BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
-BUDGETS=(8192 908094 1572865) # increase \sqrt{3} times
+BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
 
-POLICIES=("planarity" "area" "random" "uniform") # Add your policies here
-# POLICIES=("texture" "mse_mask")
+# POLICIES=("planarity" "area" "random" "uniform" "distortion") # Add your policies here
+POLICIES=("random" "uniform" ) 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
 
-BASE_OUTPUT_DIR="output/1027_with_occ/${SCENE_NAME}"
+BASE_OUTPUT_DIR="output/1031_exp/${SCENE_NAME}"
 
 # Create the base output directory if it doesn't exist
 mkdir -p "$BASE_OUTPUT_DIR"
@@ -74,6 +73,9 @@ for policy in "${POLICIES[@]}"; do
             --total_splats "$budget" \
             --alloc_policy "$policy" \
             --gs_type gs_mesh -w --iteration 1000 >> "$LOG_FILE";then
+            
+            # can use this instead 
+            # --policy_path "$DATASET_DIR/policy/${POLICY}_${BUDGET}.npy" \
             
 
 

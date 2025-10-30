@@ -91,7 +91,7 @@ def load_with_white_bg(path):
     img_out = img_out[:, :, ::-1]
     return img_out
 
-# [TODO] [DOING] migrate this policy
+# [DONE] migrate this policy
 # [TODO] [DOING] extract the warmup stage out of the main training loop
 def warmup(viewpoint_cameras, p3d_mesh,
                image_height=800, image_width=800, faces_per_pixel=1,
@@ -629,7 +629,10 @@ if __name__ == "__main__":
     parser.add_argument('--debugging', action='store_true')
     parser.add_argument('--debug_freq', type=int, default=1, help="Iteration of saving debugging images")
     parser.add_argument('--occlusion', action='store_true')
-    parser.add_argument('--policy_path', type=str, default="") # higher priority than --alloc_policy
+    parser.add_argument('--policy_path', type=str, default="", 
+        help="Path to the pre-computed .npy file storing num_gs_per_tri[]. \
+            When this is provided, it has higher priority than --alloc_policy; \
+            otherwise, will overwrite/recompute")
     # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     # <<<< [YC] add
     
