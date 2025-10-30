@@ -91,8 +91,8 @@ def load_with_white_bg(path):
     img_out = img_out[:, :, ::-1]
     return img_out
 
-# [TODO] migrate this policy
-# [TODO] extract the warmup stage out of the main training loop
+# [TODO] [DOING] migrate this policy
+# [TODO] [DOING] extract the warmup stage out of the main training loop
 def warmup(viewpoint_cameras, p3d_mesh,
                image_height=800, image_width=800, faces_per_pixel=1,
                device="cuda"):
@@ -275,8 +275,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     # [NOTE] workaround
     # warmup(scene.getTrainCameras().copy(), textured_mesh)
       
-    # print("Only run warmup, exiting...")
-    # exit()
+    if dataset.warmup_only:
+        print("[INFO] Only run warmup stage, exiting...")
+        exit()
     
     
     print("[INFO] Finished Warm-Up, Start Training..." )
@@ -634,6 +635,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--total_splats", type=int, default=131_072, help="Total number of splats to allocate (default: 2^17=131072)")
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
+    parser.add_argument("--warmup_only", action='store_true', help="only run warmup stage and exit, no entering training loop")
     
     
     
@@ -647,6 +649,7 @@ if __name__ == "__main__":
     # >>>> [Sam] add
     lp.total_splats = args.total_splats
     lp.alloc_policy = args.alloc_policy 
+    lp.warmup_only = args.warmup_only
     # <<<< [Sam] add
 
     op = optimizationParamTypeCallbacks[args.gs_type](parser)
@@ -677,4 +680,4 @@ if __name__ == "__main__":
     )
 
     # All done
-    print("\nTraining complete.")
+    print("\n[INFO] Training complete.")

@@ -48,62 +48,55 @@ def get_num_splats_per_triangle(
     policy_path: str = None,
     total_splats: int = None,
     budgeting_policy_name: str = "uniform",
-    min_splats_per_tri: int = 0,
+    min_splats_per_tri: int = 0, # [NOTE] could be adjusted
     max_splats_per_tri: int = 8,
 )-> np.ndarray: # [N,], number of splats on each triangle
-        
+    
+    # define allocation_path only when policy_path provided
+    allocation_path = Path(policy_path) if policy_path else None
+
     # load num_splats allocation policy from pre-computed file
-    if policy_path is not None and policy_path != "":
-        
-        allocation_path = Path(policy_path) # path to the .npy file storing splat allocation
-        # num_splats[]
-        # scene_name
-        # min, max
-        
-        if allocation_path.exists(): 
-            print(f"[INFO] Loading splat allocation from: {allocation_path}")
-            num_splats_per_triangle = np.full(triangles.shape[0], 1, dtype=int)
-            print("Initial max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-            num_splats_per_triangle = np.load(allocation_path)
-            print("[INFO] Final Max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-        else:
-            print(f"[WARNING] No splat allocation found at: {allocation_path}, fallback to uniform allocation")
-            num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+    if allocation_path is not None and allocation_path.exists():
+        print(f"[INFO] Loading splat allocation from: {allocation_path}")
+        num_splats_per_triangle = np.load(allocation_path)
+        print("[INFO] loaded distribution, max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
             
-            
-    # Use budgeting policy
+    # Use budgeting policy, computing on-the-fly
     elif total_splats is not None:
         # [TODO] integrate error-map-based splat allocation
+        # pass camera into the allocator somehow
         
-        
+        print(f"[INFO] no pre-computed policy found")
         print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
+
         budgeting_policy = get_budgeting_policy(
-            budgeting_policy_name, 
+            budgeting_policy_name,
             mesh=mesh_scene,
             viewpoint_camera_infos=train_cam_infos,
             dataset_path=path,
-            )
-        
+        )
+
         num_splats_per_triangle = budgeting_policy.allocate(
             triangles=triangles,
             total_splats=total_splats,
             min_per_tri=min_splats_per_tri,
             max_per_tri=max_splats_per_tri,
         )
-        
+
         print(f"[INFO] Scene::Requested total splats: {total_splats}")
         print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
         print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
         print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
-        
-        
-        # under {dataset_path}/policy
-        allocation_save_path = Path(path)/ f"policy/{budgeting_policy_name}_{total_splats}.npy"
-        print(f"[INFO] Scene::Saving splat allocation to: {allocation_save_path}")
+
+        # save under {dataset_path}/policy/{}.npy
+        allocation_save_path = Path(path) / f"policy/{budgeting_policy_name}_{total_splats}.npy"
+        allocation_save_path.parent.mkdir(parents=True, exist_ok=True)
+        assert allocation_save_path.parent.exists(), "Directory does not exist, please create it first!"
+        print(f"[INFO] Scene::Saving allocation policy file to: {allocation_save_path}")
         np.save(allocation_save_path, num_splats_per_triangle)
-        
+
+    # Fallback: uniform distribution using num_splats
     else:
-        # Default: uniform distribution using num_splats
         num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
         print(f"[INFO] Scene::Fallback using uniform distribution: {num_splats} splats per triangle")
 
@@ -165,9 +158,12 @@ def readNerfSyntheticMeshInfo(
     face_uvs = uv_coords[faces]  # (n_faces, 3, 2)
     # <<<< [YC] add
     
+    
+    # [NOTE] [SAM] this is weird, why merge train and test cams under any circumstance?
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
+    # <<<< [SAM]
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
@@ -288,12 +284,11 @@ def readNerfSyntheticMeshInfo(
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path)
-    
     return scene_info
 
 
-sceneLoadTypeCallbacks = {
-    "Colmap": readColmapSceneInfo,
-    "Blender": readNerfSyntheticInfo,
-    "Blender_Mesh": readNerfSyntheticMeshInfo
-}
+# sceneLoadTypeCallbacks = {
+#     "Colmap": readColmapSceneInfo,
+#     "Blender": readNerfSyntheticInfo,
+#     "Blender_Mesh": readNerfSyntheticMeshInfo
+# }

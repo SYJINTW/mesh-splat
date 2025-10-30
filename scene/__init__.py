@@ -72,7 +72,6 @@ class Scene:
                 # here the budgeting policy and texture obj path are passed
                 
                 
-                # [SAM] [TODO] add typing here after taking a break
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
@@ -94,9 +93,18 @@ class Scene:
             assert False, "Could not recognize scene type!"
             
         
-        # save a copy of allocation result into output dir 
-        if os.path.exists(os.path.join(self.model_path, "cameras.json")):
-            pass    
+        # save a copy of allocation result into output dir
+        computed_policy_path = os.path.join(args.source_path, f"policy/{args.alloc_policy}_{args.total_splats}.npy")
+        copy_dest = os.path.join(self.model_path, f"{args.alloc_policy}_{args.total_splats}.npy")
+        print(f"[INFO] Copying computed budgeting policy from {computed_policy_path} to {copy_dest}")
+        if os.path.exists(computed_policy_path):
+            with open(computed_policy_path, 'rb') as src_file, open(copy_dest , 'wb') as dest_file:
+                dest_file.write(src_file.read())
+        else:    
+            print(f"[WARNING] Didn't find computed budgeting policy file at {computed_policy_path}, skipping copy.")
+        
+        
+        
         # ====== Load Cameras and PLY files ======
         if not self.loaded_iter:
             if args.gs_type == "gs_multi_mesh":

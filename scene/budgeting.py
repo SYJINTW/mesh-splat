@@ -1,11 +1,7 @@
-# [DONE] port this module from old codebase to here
-# [TODO] store policy result as .npy file alongside GS/Mesh for reproducibility and batch processing
-
-# ensure all of these run expectedly
-# then test out performance
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import Dict, Optional
+from types import SimpleNamespace
 from functools import partial
 
 import numpy as np
@@ -25,6 +21,8 @@ from utils.camera_utils import cameraList_from_camInfos
 
 
 
+# ensure all of these run expectedly
+# then test out performance
 class BudgetingPolicy(ABC):
     """
     Abstract Base Class of budgeting policies for training.
@@ -153,14 +151,14 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         "planarity2": partial(PlanarityBasedBudgetingPolicy, hops=2),
         "planarity3": partial(PlanarityBasedBudgetingPolicy, hops=3),
         
-        # same, use partial to set focus
+        # same, use partial to set focus or other params
         "texture": None, 
         "texture_focus": None,
         "texture_avoid": None,
         
         
         "distortion": DistortionMapBudgetingPolicy,
-        "from_file": None,
+        "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
     try:
         print(f"[INFO] Budget::Using budgeting policy: {name}")
@@ -405,9 +403,10 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
 
         # Build Camera objects
+        args = SimpleNamespace(resolution=1, data_device=device) # dummy args
         self.viewpoint_cameras = cameraList_from_camInfos(
             self.viewpoint_camera_infos, resolution_scale=1.0, 
-            args={"resolution": 1, "data_device": device}
+            args=args
         )
         assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
 
