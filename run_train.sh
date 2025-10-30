@@ -1,4 +1,4 @@
-
+# This script serves as fast debugging for training with a specific scene, policy, and budget.
 set -e
 CUDA_VISIBLE_DEVICES=0
 
@@ -8,12 +8,12 @@ CUDA_VISIBLE_DEVICES=0
 BUDGET=(185364) # Add your budgets here
 
 # POLICIES=("planarity" "area" "uniform" "rand_uni") # Add your policies here
-POLICY=("planarity") # Add your policies here
+POLICY=("distortion") # Add your policies here
 
 LOG_FILE="train.log"
 SCENE_NAME="hotdog" # or other NeRF scene name
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
-SAVE_DIR="output/${SCENE_NAME}_${POLICY}_${BUDGET}"
+SAVE_DIR="output/Debug_${SCENE_NAME}_${POLICY}_${BUDGET}"
 
 
 

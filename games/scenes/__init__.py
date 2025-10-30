@@ -25,6 +25,7 @@ from games.flame_splatting.scene.dataset_readers import (
     readNerfSyntheticFlameInfo
 )
 
+# Called when Scene inits
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Colmap_Mesh": readColmapMeshSceneInfo,

@@ -46,6 +46,10 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
+
+        # ---------------------------------------------------------------------------- #
+        #               Call dataset reader according to dataset type                  # 
+        # ---------------------------------------------------------------------------- #
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             if args.gs_type == "gs_multi_mesh":
                 scene_info = sceneLoadTypeCallbacks["Colmap_Mesh"](
@@ -53,9 +57,16 @@ class Scene:
                 )
             else:
                 scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+        
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+            
             if args.gs_type == "gs_mesh": #! [YC] need to be aware of gs_type
+                
                 print("Found transforms_train.json file, assuming Blender_Mesh data set!")
+                
+                # Our main experiments use this path
+                # here the budgeting policy and texture obj path are passed
+                
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
@@ -75,7 +86,10 @@ class Scene:
                 scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         else:
             assert False, "Could not recognize scene type!"
-
+            
+            
+            
+        # ====== Load Cameras and PLY files ======
         if not self.loaded_iter:
             if args.gs_type == "gs_multi_mesh":
                 for i, ply_path in enumerate(scene_info.ply_path):
@@ -116,7 +130,8 @@ class Scene:
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
-        if self.loaded_iter: # [YC] note: for rendering
+        # [YC] [NOTE] Load GS scene (ply file) for rendering
+        if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
@@ -130,6 +145,9 @@ class Scene:
         else: # [YC] note: first time training
             # [YC] note: if using "gs_mesh", the create_from_pcd will use the one defined in mesh-splat/games/scene/gaussian_model_mesh.py
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+
+
+
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

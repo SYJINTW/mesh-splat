@@ -59,7 +59,7 @@ def readNerfSyntheticMeshInfo(
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
     
     if texture_obj_path is None:
-        print(f"Reading Mesh object from {path}/mesh.obj")
+        print(f"[INFO] DatasetReader::Reading Mesh object from {path}/mesh.obj")
         mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
     else:
         print(f"Reading Mesh object from {texture_obj_path}")
@@ -123,10 +123,17 @@ def readNerfSyntheticMeshInfo(
             else:
                 print("No splat filter found at:", filter_path)
                 num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
+                
+                
         elif total_splats is not None:
             # Use budgeting policy
             print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
-            budgeting_policy = get_budgeting_policy(budgeting_policy_name, mesh=mesh_scene)
+            budgeting_policy = get_budgeting_policy(
+                budgeting_policy_name, 
+                mesh=mesh_scene,
+                viewpoint_cameras=train_cam_infos,
+                dataset_path=path,
+                )
             
             num_splats_per_triangle = budgeting_policy.allocate(
                 triangles=triangles,

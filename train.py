@@ -91,6 +91,8 @@ def load_with_white_bg(path):
     img_out = img_out[:, :, ::-1]
     return img_out
 
+# [TODO] migrate this policy
+# [TODO] extract the warmup stage out of the main training loop
 def warmup(viewpoint_cameras, p3d_mesh,
                image_height=800, image_width=800, faces_per_pixel=1,
                device="cuda"):
@@ -243,8 +245,17 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
     print("Training func policy_path:", policy_path)
-    scene = Scene(dataset, gaussians, 
-                  policy_path=policy_path) #! [YC] note: main changing point is here
+        
+    # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
+    textured_mesh = None
+    if texture_obj_path != "":
+        print("Loading textured mesh for background rendering...")
+        textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+    # <<<< [YC] add
+    
+    
+    #! [YC] note: main changing point is here
+    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path,) 
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -254,13 +265,6 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         print("Debugging mode is on.")
         check_path = Path(scene.model_path)/"debugging"/"training_check"
         check_path.mkdir(parents=True, exist_ok=True)
-        
-    # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
-    textured_mesh = None
-    if texture_obj_path != "":
-        print("Loading textured mesh for background rendering...")
-        textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
-    # <<<< [YC] add
     
     # warmup(scene.getTrainCameras().copy(), textured_mesh)
     # exit()
