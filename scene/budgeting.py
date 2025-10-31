@@ -436,6 +436,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         img_out = img_out[:, :, ::-1]
         return img_out
 
+
+    # [TODO] check the heatmap point cloud against the mesh, the coordinates should align
     def _compute_distortion_weights(self) -> np.ndarray:
         """
         Compute per-triangle distortion weights by rendering from all viewpoints.

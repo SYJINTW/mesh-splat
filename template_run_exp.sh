@@ -1,6 +1,6 @@
 #!/bin/bash
 # set -e  # Remove this line to prevent script exit on error
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 # ====== Simple timers ======
 fmt_time() {
@@ -13,19 +13,21 @@ failed_experiments=0
 
 # ======= Experiment Parameters ======
 
-### With occlusion-handling
-### see the log files to confirm
+# BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # increasing order
+# BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
+BUDGETS=(1572865) # Add your budgets here
 
+#POLICIES=("random" "uniform" "area" "planarity" "distortion")
+POLICIES=("distortion")
 
-BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
-
-# POLICIES=("planarity" "area" "random" "uniform" "distortion") # Add your policies here
-POLICIES=("random" "uniform" ) 
+IS_OCCLUSION="--occlusion" # sanity check in the logfile
+ITERATION=1000
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
+BASE_OUTPUT_DIR="output/1031_distortion/${SCENE_NAME}"
 
-BASE_OUTPUT_DIR="output/1031_exp/${SCENE_NAME}"
+
 
 # Create the base output directory if it doesn't exist
 mkdir -p "$BASE_OUTPUT_DIR"
@@ -67,12 +69,11 @@ for policy in "${POLICIES[@]}"; do
             -s  "$DATASET_DIR" \
             -m "$SAVE_DIR" \
             --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
-            --debugging \
+            --debugging "$IS_OCCLUSION" \
             --debug_freq 100 \
-            --occlusion \
             --total_splats "$budget" \
             --alloc_policy "$policy" \
-            --gs_type gs_mesh -w --iteration 1000 >> "$LOG_FILE";then
+            --gs_type gs_mesh -w --iteration "$ITERATION" >> "$LOG_FILE";then
             
             # can use this instead 
             # --policy_path "$DATASET_DIR/policy/${POLICY}_${BUDGET}.npy" \
