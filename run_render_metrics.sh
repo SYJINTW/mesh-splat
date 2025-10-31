@@ -15,9 +15,10 @@ failed_experiments=0
 
 # ======= Experiment Parameters ======
 
-BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
+# BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # Add your budgets here
+BUDGETS=(908094 1572865) # Add your budgets here
 #POLICIES=("random" "uniform" "area" "planarity" "distortion")
-POLICIES=("random" "uniform" "area" "planarity" "distortion")
+POLICIES=("uniform")
 IS_OCCLUSION="--occlusion"
 
 SCENE_NAME="hotdog"
