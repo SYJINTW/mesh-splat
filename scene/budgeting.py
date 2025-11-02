@@ -87,7 +87,7 @@ class UniformBudgetingPolicy(BudgetingPolicy):
     def __init__(self, mesh=None, **kwargs):
         super().__init__(mesh, **kwargs)
     
-    
+    # only this baseline policy overrides allocate() method
     def allocate(
         self,
         total_splats: int,
@@ -325,8 +325,14 @@ def _unbounded_proportional_allocate(
     
     
     # calculate the correlation coefficient 
-    # to see how far off are alloc[]:int from weights[]:float
+    # to see how far off alloc[]:int is from weights[]:float
+    expected_alloc = norm_weights * total  # ideal fractional allocation
+    correlation = np.corrcoef(norm_weights, alloc / total)[0,1] # the result is [[1, corr],[corr,1]]
+    rmse = np.sqrt(np.mean((alloc - expected_alloc) ** 2))
     
+    print(f"[DEBUG] Allocation quality metrics:")
+    print(f"  - Pearson correlation: {correlation:.4f} (1.0 = perfect)")
+    print(f"  - RMSE: {rmse:.4f} (0.0 = perfect)")
 
 
     assert np.all(alloc >= 0), "Error: Allocation contains negative values"

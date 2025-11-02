@@ -12,17 +12,15 @@ export CUDA_VISIBLE_DEVICES=0
 # BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # increasing order
 BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
 
-# POLICIES=("random" "uniform" "area" "planarity" "distortion")
-POLICIES=("distortion")
-
-WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
+POLICIES=("uniform" "random" "area" "planarity" "distortion")
+WHETHER_OCCLUSION=(""  "--occlusion") # sanity check in the logfile
 
 
 ITERATION=1000
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
-BASE_OUTPUT_DIR="output/1031_distortion/${SCENE_NAME}"
+BASE_OUTPUT_DIR="output/1102_unbounded/${SCENE_NAME}"
 PLOT_DIR="${BASE_OUTPUT_DIR}/for_plot"
 
 # ======= Helpers ======
@@ -90,8 +88,9 @@ for policy in "${POLICIES[@]}"; do
                 -s "$DATASET_DIR" \
                 -m "$SAVE_DIR" \
                 --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
-                --debugging "$IS_OCCLUSION" \
+                --debugging \
                 --debug_freq 100 \
+                $IS_OCCLUSION \
                 --total_splats "$budget" \
                 --alloc_policy "$policy" \
                 --gs_type gs_mesh -w --iteration "$ITERATION" >> "$LOG_FILE"; then
@@ -119,7 +118,10 @@ for policy in "${POLICIES[@]}"; do
                 if python render_mesh_splat.py \
                     -m "$SAVE_DIR" \
                     --gs_type gs_mesh \
-                    --skip_train "$IS_OCCLUSION" \
+                    --skip_train \
+                    $IS_OCCLUSION \
+                    --total_splats "$budget" \
+                    --alloc_policy "$policy" \
                     --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
                     --policy_path "${LOAD_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE" 2>&1; then
                     # policy is computed during training already
