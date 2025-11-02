@@ -269,6 +269,77 @@ def _bounded_proportional_allocate(
     return alloc
 
 
+def _unbounded_proportional_allocate(
+    weights: np.ndarray,
+    total: int,
+    # min_per: int,
+    # max_per: int
+) -> np.ndarray:
+    """
+    input: weight/importance/priority/score per triangle
+    
+    Allocate nonnegative *integers* that:
+    - sum exactly to 'total'
+    - proportional to 'weights' (when possible)
+    
+    Returns:
+        np.ndarray: Array of integers of shape (N,) representing the allocation per triangle.
+    
+    ---
+    Example:
+    weights = [0.1, 0.2, 0.4], total=10
+    initial allocation = [1.428, 2.857, 5.714], 
+    integer part = [1, 2, 5], remainder = [0.428, 0.857, 0.714]
+    final allocation = [1, 3, 6]
+
+    """
+
+    N = weights.shape[0]
+    if N == 0:
+        return np.zeros((0,), dtype=np.int32)
+    
+    # Normalize weights to prevent very large numbers, ensure they are positive
+    w_sum = np.sum(weights)
+    if w_sum > 0:
+        norm_weights = weights / w_sum
+        # [TODO] could try other normalization strategies
+        # e.g. exponential, logarithmic, etc.
+    else:
+        # If all weights are zero, fallback to uniform weights
+        norm_weights = np.ones(N, dtype=np.float32) / N
+        print("[WARNING] sum of all weights are zero; distributing uniformly.")
+
+
+    # "Largest Remainder Method"
+    alloc =  np.zeros((N,), dtype=np.int32)
+    
+    
+    # Keep track of fractional parts to decide who gets the next splat
+    fractional_parts = norm_weights * total
+    
+    # Distribute the integer part of the proportional allocation
+    int_alloc = fractional_parts.astype(np.int32)
+    alloc += int_alloc
+    
+    # the remainder one by one based on largest fractional part
+    budget_to_distribute = total - alloc.sum()
+    remainder = fractional_parts - int_alloc
+    indices_to_add = np.argsort(-remainder) # Sort descending
+    for i in range(budget_to_distribute):
+        idx = indices_to_add[i % N] # Cycle through if needed, though unlikely
+        alloc[idx] += 1
+    
+    
+    # calculate the correlation coefficient 
+    # to see how far off are alloc[]:int from weights[]:float
+    
+
+
+    assert np.all(alloc >= 0), "Error: Allocation contains negative values"
+    assert alloc.sum() == total, f"Error: Final allocation sum {alloc.sum()} does not match total budget {total}"
+    return alloc
+
+
 
 class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     """
