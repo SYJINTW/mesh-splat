@@ -102,6 +102,7 @@ def warmup(viewpoint_cameras, p3d_mesh,
     Then, we can get the distortion map (pixel-wise difference).
     Second, we prioritize the triangles that project to high distortion pixels, and assign more Gaussians to them.
     """
+    #[TODO] also migrate the debugging logic
     debugging = True
     if debugging:
         heatmap_output_dir = Path(f"../distortion_heatmap")

@@ -72,13 +72,16 @@ def get_num_splats_per_triangle(
             viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
             dataset_path=path,
         )
-
         num_splats_per_triangle = budgeting_policy.allocate(
-            triangles=triangles,
             total_splats=total_splats,
-            min_per_tri=min_splats_per_tri,
-            max_per_tri=max_splats_per_tri,
         )
+
+        # num_splats_per_triangle = budgeting_policy.allocate_bounded(
+        #     triangles=triangles,
+        #     total_splats=total_splats,
+        #     min_per_tri=min_splats_per_tri,
+        #     max_per_tri=max_splats_per_tri,
+        # )
 
         print(f"[INFO] Scene::Requested total splats: {total_splats}")
         print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")

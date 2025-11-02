@@ -20,21 +20,37 @@ from utils.camera_utils import cameraList_from_camInfos
 
 
 
+EPS = 1e-8 # small positive epsilon to avoid divide-by-zero
 
-# ensure all of these run expectedly
-# then test out performance
+# ensure all of the policies run expectedly
+# then test out performance of each one of them
+# [TODO] [DOING] refactor all with self.weights and super()
 class BudgetingPolicy(ABC):
     """
     Abstract Base Class of budgeting policies for training.
+    Subclasses should compute `self.weights` in their __init__ method.
     """
-    def __init__(self, mesh=None, **kwargs):  # accept and ignore extra keyword arguments
-        # some policies might not need mesh
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):  # accept and ignore extra keyword arguments
+        # what if mesh is in other formats, e.g. pytorch3d meshes?
+        assert mesh is not None, "BudgetingPolicy requires a mesh object."
         self.mesh = mesh
+        self.num_triangles = int(mesh.faces.shape[0])
+        # Default to uniform weights if not overridden by a subclass
+        self.weights: np.ndarray = np.ones((self.num_triangles,), dtype=np.float32)
 
-    @abstractmethod
     def allocate(
         self,
-        triangles: torch.Tensor,        # [N,3,3]
+        total_splats: int
+        ) -> np.ndarray:
+        """
+        Default allocate method without bounds.
+        returns a list (numpy array) of number of splats per triangle
+        """
+        return _unbounded_proportional_allocate(self.weights, total_splats)
+
+
+    def allocate_bounded(
+        self,
         total_splats: int,
         min_per_tri: int,
         max_per_tri: int
@@ -42,10 +58,12 @@ class BudgetingPolicy(ABC):
         """
         returns a list (numpy array) of number of splats per triangle
         """
-        pass
-
-    def drop(self):
-        # placeholder for future
+        return _bounded_proportional_allocate(
+            self.weights, total_splats, min_per_tri, max_per_tri
+        )
+        
+    def drop(self): # or keep(self)
+        # placeholder for future ABR algorithms
         # could be used in render/post-processing
         pass
 
@@ -56,20 +74,10 @@ class AreaBasedBudgetingPolicy(BudgetingPolicy):
     Allocates points to triangles based on their surface area.
     Larger triangles get more points.
     """
-    def __init__(self, mesh=None, **kwargs):
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
         super().__init__(mesh, **kwargs)
-
-    def allocate(
-        self,
-        triangles: torch.Tensor,
-        total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
-    ) -> np.ndarray:
-        areas = trimesh.triangles.area(triangles.cpu().numpy())
-        # Use area as weights for the allocation function
-        return _bounded_proportional_allocate(areas, total_splats, min_per_tri, max_per_tri)
-
+        # Use pre-computed face areas from the trimesh object
+        self.weights = np.maximum(self.mesh.area_faces, EPS).astype(np.float32)
 
 
 class UniformBudgetingPolicy(BudgetingPolicy):
@@ -78,62 +86,42 @@ class UniformBudgetingPolicy(BudgetingPolicy):
     """
     def __init__(self, mesh=None, **kwargs):
         super().__init__(mesh, **kwargs)
-
+    
+    
     def allocate(
         self,
-        triangles: torch.Tensor,
         total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
     ) -> np.ndarray:
-        num_triangles = triangles.shape[0]
-        # For uniform allocation, all weights are equal
-        weights = np.ones(num_triangles, dtype=np.float32)
-        return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
-
+        num_triangles = self.num_triangles
+        uniform_alloc = total_splats // num_triangles
+        print(f"[INFO] Budget::UniformBudgetingPolicy allocating {uniform_alloc} splats per triangle.")
+        
+        return np.full((num_triangles,), uniform_alloc, dtype=np.int32)
 
 class RandomUniformBudgetingPolicy(BudgetingPolicy):
     """
     Allocates points to triangles based on weights randomly sampled from Uniform(0,1).
     """
-    def __init__(self, mesh=None, **kwargs):
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
         super().__init__(mesh, **kwargs)
-
-    def allocate(
-        self,
-        triangles: torch.Tensor,
-        total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
-    ) -> np.ndarray:
-        num_triangles = triangles.shape[0]
-        weights = np.random.rand(num_triangles).astype(np.float32)
-        weights = np.clip(weights, 1e-6, 1.0) # make sure weights are positive
-        return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
+        weights = np.random.rand(self.num_triangles).astype(np.float32)
+        self.weights = np.clip(weights, EPS, 1.0) # make sure weights are positive
 
 
 
 class RandomNormalBudgetingPolicy(BudgetingPolicy):
     """
-    Allocates a uniform number of points to each triangle.
-    """
-    def __init__(self, mesh=None, **kwargs):
-        super().__init__(mesh, **kwargs)
+        Allocates points to triangles based on weights randomly sampled from Normal(0,1).
 
-    def allocate(
-        self,
-        triangles: torch.Tensor,
-        total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
-    ) -> np.ndarray:
-        num_triangles = triangles.shape[0]
+    """
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
+        super().__init__(mesh, **kwargs)
         mu = 0.5
         sigma = 0.15 # adjustable parameter
-        w = np.random.normal(loc=mu, scale=sigma, size=num_triangles).astype(np.float32)
-        weights = np.clip(w, 1e-6, 1.0) # make sure weights are positive
-        return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
+        w = np.random.normal(loc=mu, scale=sigma, size=self.num_triangles).astype(np.float32)
+        self.weights = np.clip(w, EPS, 1.0) # make sure weights are positive
 
+    
 
 def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
     
@@ -170,6 +158,7 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
 
 
+# [NOTE] need to explain this with pseudocode or paragraphs in the paper
 def _bounded_proportional_allocate(
     weights: np.ndarray,
     total: int,
@@ -181,7 +170,7 @@ def _bounded_proportional_allocate(
     
     Allocate integers that:
     - sum exactly to 'total'
-    - each in [min_per, max_per]
+    - each in [min_per, max_per] #[TODO] try unbounded, that is, [0, inf)
     - proportional to 'weights' (when possible)
     """
     N = weights.shape[0]
@@ -199,6 +188,7 @@ def _bounded_proportional_allocate(
         # For the lower bound, raising an error is usually better as it's an unrecoverable state.
         raise ValueError(f"Total budget {total} is less than the minimum required {min_required}")
 
+    
     # 1. Start with the minimum allocation for everyone
     alloc = np.full(N, min_per, dtype=np.int32)
     
@@ -208,13 +198,17 @@ def _bounded_proportional_allocate(
     if remaining_budget == 0:
         return alloc
 
+    ###########################################################################
+    # [NOTE] the [min,max] part could be ignored if we're just using [0, inf) # 
+    ###########################################################################
+    
     # 3. Iteratively distribute the remaining budget
     # Normalize weights to prevent very large numbers, ensure they are positive
     w_sum = np.sum(weights)
     if w_sum > 0:
         norm_weights = weights / w_sum
     else:
-        # If all weights are zero, distribute uniformly
+        # If all weights are zero, fallback to uniform weights
         norm_weights = np.ones(N, dtype=np.float32) / N
         print("[WARNING] sum of all weights are zero; distributing uniformly.")
 
@@ -243,7 +237,7 @@ def _bounded_proportional_allocate(
         if alloc[idx] < max_per:
             alloc[idx] += 1
     
-    # Final check to ensure budget is met exactly
+    # Final check to ensure budget is fully exhausted
     final_sum = alloc.sum()
     if final_sum != total:
         # If there's still a discrepancy (due to max_per cap), adjust greedily
@@ -264,7 +258,7 @@ def _bounded_proportional_allocate(
                 deficit += remove_amount
 
     assert alloc.sum() == total, f"Final allocation sum {alloc.sum()} does not match total budget {total}"
-    assert np.all(alloc >= min_per) and np.all(alloc <= max_per), "Allocation is out of min/max bounds"
+    assert np.all(alloc >= min_per) and np.all(alloc <= max_per), "Allocation violates min/max bounds"
 
     return alloc
 
@@ -277,7 +271,7 @@ def _unbounded_proportional_allocate(
 ) -> np.ndarray:
     """
     input: weight/importance/priority/score per triangle
-    
+
     Allocate nonnegative *integers* that:
     - sum exactly to 'total'
     - proportional to 'weights' (when possible)
@@ -348,20 +342,32 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     - focus='planar': more splats where neighborhood is planar (high MRL).
     """
     
-    def __init__(self, mesh: Optional[trimesh.Trimesh], hops: int = 1, focus: str = "nonplanar", **kwargs):
+    def __init__(self, mesh: trimesh.Trimesh, hops: int = 1, focus: str = "nonplanar", **kwargs):
         super().__init__(mesh, **kwargs)
         self.hops = int(max(0, hops))
         self.focus = focus.lower()
-        self.mrl: Optional[np.ndarray] = None
-        if mesh is not None:
-            try:
-                self.mrl = self._compute_planarity_mrl(mesh, hops=self.hops)
-            except Exception:
-                self.mrl = None
+        try:
+            mrl = self._compute_planarity_mrl(mesh, hops=self.hops)
+            if mrl is not None and len(mrl) == self.num_triangles:
+                if self.focus == "planar":
+                    self.weights = np.maximum(mrl, EPS)  # high on planar
+                    
+                else: # 'nonplanar'
+                    # [TODO] could change 1-F_i to other types of inversion functions, e.g. exp(-k*F_i)
+                    self.weights = np.maximum(1.0 - mrl, EPS)  # high on non-planar
+                
+                print(f"[INFO] Budget::PlanarityBasedBudgetingPolicy using focus='{self.focus}' with hops={self.hops}")
+            else:
+                print(f"[WARNING] PlanarityBasedBudgetingPolicy: Failed to compute planarity, falling back to uniform weights.")
+
+        except Exception as e:
+            print(f"[WARNING] PlanarityBasedBudgetingPolicy: Failed to compute planarity, falling back to uniform weights. Error: {e}")
+            # Fallback to uniform weights is handled by the base class __init__
+
 
     def _compute_planarity_mrl(self, mesh: trimesh.Trimesh, hops: int = 1) -> Optional[np.ndarray]:
         """
-        Returns per-face mean resultant length in [0,1], 1 = planar neighborhood.
+        Returns per-face mean resultant length (MRL) in [0,1], 1 = planar neighborhood.
         Uses face adjacency up to 'hops'.
         """
         if mesh is None or mesh.faces is None or mesh.face_normals is None:
@@ -411,32 +417,10 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
 
         return mrl
 
-    def allocate(
-        self,
-        triangles: torch.Tensor,
-        total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
-    ) -> np.ndarray:
-        N = int(triangles.shape[0])
-        if self.mrl is None or len(self.mrl) != N:
-            weights = np.ones((N,), dtype=np.float32)
-        else:
-            if self.focus == "planar":
-                weights = np.maximum(self.mrl, 1e-6)  # high on planar
-            else:
-                # [TODO] could change 1-F_i to other types of inversion functions, e.g. exp(-k*F_i)
-                weights = np.maximum(1.0 - self.mrl, 1e-6)  # high on non-planar
-                
-            print(f"[INFO] Budget::PlanarityBasedBudgetingPolicy using focus='{self.focus}' with hops={self.hops}")
-            
-            
-        return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
 
 
 
-
-
+#[TODO] [BUG] the policy was not correctly loaded during render_mesh_splat?
 class DistortionMapBudgetingPolicy(BudgetingPolicy):
     """
     Allocate points based on distortion/error of rendering textured mesh vs ground truths.
@@ -450,7 +434,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
     """
     def __init__(
         self, 
-        mesh: Optional[trimesh.Trimesh],
+        mesh: trimesh.Trimesh,
         viewpoint_camera_infos=None,  # pass in CamInfo, get Camera later
         dataset_path: str = None,
         image_height: int = 800,
@@ -468,9 +452,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         self.faces_per_pixel = faces_per_pixel
         self.device = device
         self.debugging = debugging
-        self.distortion_weights: Optional[np.ndarray] = None
 
-        assert mesh is not None, "DistorsionMapPolicy::Missing Mesh "
         assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
 
         # Build Camera objects
@@ -481,8 +463,15 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         )
         assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
 
-        # Compute distortion weights
-        self.distortion_weights = self._compute_distortion_weights()
+        # Compute distortion weights and assign to self.weights
+        distortion_weights = self._compute_distortion_weights()
+        if distortion_weights is not None and len(distortion_weights) == self.num_triangles:
+            self.weights = distortion_weights
+            print(f"[INFO] DistortionMapBudgetingPolicy: Using computed distortion weights")
+            print(f"[INFO] Weight stats - min: {self.weights.min():.4f}, max: {self.weights.max():.4f}, mean: {self.weights.mean():.4f}")
+        else:
+            print("[WARNING] DistortionMapBudgetingPolicy: No valid distortion weights, falling back to uniform")
+            # Fallback to uniform is handled by base class __init__
 
     def _load_with_white_bg(self, path):
         """Load image with white background compositing."""
@@ -621,9 +610,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         # Normalize to [0, 1] and ensure positive weights
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
-        dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + 1e-8)
+        dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
         
-        return np.maximum(dist_norm, 1e-6).astype(np.float32)
+        return np.maximum(dist_norm, EPS).astype(np.float32)
 
     @staticmethod
     def _standardize_image_to_hwc3(arr, H: int, W: int) -> np.ndarray:
@@ -712,7 +701,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                     # Save heatmap (normalized)
                     try:
                         dm = item["dist_map"].astype(np.float32)
-                        dm_norm = dm / (np.max(dm) + 1e-8)
+                        dm_norm = dm / (np.max(dm) + EPS)
                         plt.figure(figsize=(6, 6))
                         plt.imshow(dm_norm, cmap='hot', vmin=0.0, vmax=1.0)
                         plt.axis('off')
@@ -723,7 +712,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                         print(f"[WARNING] Could not save heatmap for {name}: {e}")
 
             # 2) Global PLY with per-vertex colors aggregated from per-face distortion
-            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.ptp() + 1e-8)
+            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.ptp() + EPS)
             cmap = cm.get_cmap('jet')
             colors = cmap(dist_norm)[:, :3]  # (num_faces, 3), RGB in [0,1]
             
@@ -732,7 +721,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             for f_id, verts in enumerate(self.mesh.faces):
                 vertex_colors[verts] += colors[f_id]
             counts = np.bincount(self.mesh.faces.flatten(), minlength=len(self.mesh.vertices))
-            vertex_colors /= np.maximum(counts[:, None], 1e-8)
+            vertex_colors /= np.maximum(counts[:, None], EPS)
 
             # Build Open3D point cloud
             pcd = o3d.geometry.PointCloud()
@@ -745,24 +734,4 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print(f"[INFO] Saved distortion debug to {base_dir}")
         except Exception as e:
             print(f"[WARNING] Could not save debug visualization: {e}")
-
-    def allocate(
-        self,
-        triangles: torch.Tensor,
-        total_splats: int,
-        min_per_tri: int,
-        max_per_tri: int
-    ) -> np.ndarray:
-        N = int(triangles.shape[0])
-        
-        if self.distortion_weights is None or len(self.distortion_weights) != N:
-            # Fallback to uniform if we can't compute distortion
-            weights = np.ones((N,), dtype=np.float32)
-            print("[WARNING] DistortionMapBudgetingPolicy: No valid distortion weights, falling back to uniform")
-        else:
-            weights = self.distortion_weights
-            print(f"[INFO] DistortionMapBudgetingPolicy: Using computed distortion weights")
-            print(f"[INFO] Weight stats - min: {weights.min():.4f}, max: {weights.max():.4f}, mean: {weights.mean():.4f}")
-        
-        return _bounded_proportional_allocate(weights, total_splats, min_per_tri, max_per_tri)
 
