@@ -64,7 +64,7 @@ def get_num_splats_per_triangle(
     # Use budgeting policy, computing on-the-fly
     elif total_splats is not None:
         print(f"[INFO] no pre-computed policy found")
-        print(f"[INFO] Scene::Using budgeting policy: {budgeting_policy_name}")
+        print(f"[INFO] Scene::Reader() Using budgeting policy: {budgeting_policy_name}")
 
         budgeting_policy = get_budgeting_policy(
             budgeting_policy_name,
@@ -83,34 +83,35 @@ def get_num_splats_per_triangle(
         #     max_per_tri=max_splats_per_tri,
         # )
 
-        print(f"[INFO] Scene::Requested total splats: {total_splats}")
-        print(f"[INFO] Scene::Allocated total splats: {num_splats_per_triangle.sum()}")
-        print(f"[INFO] Scene::Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
-        print(f"[INFO] Scene::Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
+        print(f"[INFO] Scene::Reader() Requested total splats: {total_splats}")
+        print(f"[INFO] Scene::Reader() Allocated total splats: {num_splats_per_triangle.sum()}")
+        print(f"[INFO] Scene::Reader() Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
+        print(f"[INFO] Scene::Reader() Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
 
         # save under {dataset_path}/policy/{}.npy
         allocation_save_path = Path(path) / f"policy/{budgeting_policy_name}_{total_splats}.npy"
         allocation_save_path.parent.mkdir(parents=True, exist_ok=True)
         assert allocation_save_path.parent.exists(), "Directory does not exist, please create it first!"
-        print(f"[INFO] Scene::Saving allocation policy file to: {allocation_save_path}")
+        print(f"[INFO] Scene::Reader() Saving allocation policy file to: {allocation_save_path}")
         np.save(allocation_save_path, num_splats_per_triangle)
 
     # Fallback: uniform distribution using num_splats
     else:
         num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-        print(f"[INFO] Scene::Fallback using uniform distribution: {num_splats} splats per triangle")
+        print(f"[INFO] Scene::Reader() Fallback using uniform distribution: {num_splats} splats per triangle")
 
     return num_splats_per_triangle
 
 
-def readNerfSyntheticMeshInfo(
+def readNerfSyntheticMeshInfo( # don't use num_splats
         path, white_background, eval, num_splats, extension=".png",
         # >>>> [YC] add
         texture_obj_path: str = None,
         policy_path: str = None,
         # <<<< [YC] add
         # >>>> [SAM] add budgeting policy params
-        total_splats: int = None,  # if None, falls back to num_splats per triangle
+        total_splats: int = None,  
+        budget_per_tri: float = None, 
         budgeting_policy_name: str = "uniform",
         min_splats_per_tri: int = 0,
         max_splats_per_tri: int = 8,
@@ -159,7 +160,7 @@ def readNerfSyntheticMeshInfo(
     # <<<< [YC] add
     
     
-    # [NOTE] [SAM] this is weird, why merge train and test cams under any circumstance?
+    # [NOTE] [SAM] this is weird, why merge train and test cams, even if not in --eval mode?
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -172,6 +173,14 @@ def readNerfSyntheticMeshInfo(
     
     # if not os.path.exists(ply_path):
     if True:
+        
+        assert budget_per_tri is not None or total_splats is not None, "Either num_splats or total_splats must be provided for budgeting!"
+        
+        if total_splats is None:
+            total_splats = int(budget_per_tri * triangles.shape[0])
+            print(f"[INFO] total_splats not provided, computed from budget_per_tri: {total_splats} splats")
+        else:
+            print(f"[INFO] total_splats provided: {total_splats} splats")
         
         # >>>> [SAM] Budgeting policy integration
         num_splats_per_triangle = get_num_splats_per_triangle(

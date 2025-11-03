@@ -637,7 +637,9 @@ if __name__ == "__main__":
     # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
     # <<<< [YC] add
     
-    parser.add_argument("--total_splats", type=int, default=131_072, help="Total number of splats to allocate (default: 2^17=131072)")
+    # use either of the two to set total number of splats (bit budget, or gaussian budget for the whole scene)
+    parser.add_argument("--total_splats", type=int, help="Total number of splats to allocate")
+    parser.add_argument("--budget_per_tri", type=float, default=1.0, help="set the total number of splats to be this number * number of triangles")
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
     parser.add_argument("--warmup_only", action='store_true', help="only run warmup stage and exit, no entering training loop")
     
@@ -652,6 +654,7 @@ if __name__ == "__main__":
     
     # >>>> [Sam] add
     lp.total_splats = args.total_splats
+    lp.budget_per_tri = args.budget_per_tri
     lp.alloc_policy = args.alloc_policy 
     lp.warmup_only = args.warmup_only
     # <<<< [Sam] add

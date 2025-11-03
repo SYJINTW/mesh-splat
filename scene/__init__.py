@@ -80,6 +80,7 @@ class Scene:
                     # <<<< [YC] add
                     # >>>> [Sam] add
                     total_splats=args.total_splats,
+                    budget_per_tri=args.budget_per_tri,
                     budgeting_policy_name=args.alloc_policy,
                     # <<<< [Sam] add
                 )

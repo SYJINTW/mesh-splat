@@ -120,8 +120,9 @@ if __name__ == "__main__":
     parser.add_argument("--occlusion", action="store_true", help="Whether to use occlusion handling during rendering.")
     parser.add_argument("--policy_path", type=str, default="", help="Path to the splat density policy npy file.")
     # <<<< [YC] add
-    parser.add_argument("--total_splats", type=int, default=131_072, help="Total number of splats to allocate (default: 2^17=131072)")
+    parser.add_argument("--total_splats", type=int, help="Total number of splats to allocate")
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
+    parser.add_argument("--budget_per_tri", type=float, default=1.0, help="set the total number of splats to be this number * number of triangles")
     
     
     
@@ -132,6 +133,7 @@ if __name__ == "__main__":
     # >>>> [SAM] add
     model.total_splats = args.total_splats
     model.alloc_policy = args.alloc_policy
+    model.budget_per_tri = args.budget_per_tri
     # <<<< [SAM] add
     
     print("Rendering " + args.model_path)
