@@ -72,7 +72,9 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         gaussians = gaussianModelRender[gs_type](dataset.sh_degree)
         scene = Scene(dataset, gaussians, 
                       load_iteration=iteration, shuffle=False,
-                      policy_path=policy_path)
+                      policy_path=policy_path,
+                      texture_obj_path=texture_obj_path
+                      )
         if hasattr(gaussians, 'update_alpha'):
             gaussians.update_alpha()
         if hasattr(gaussians, 'prepare_vertices'):

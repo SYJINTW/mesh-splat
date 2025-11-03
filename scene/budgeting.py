@@ -24,7 +24,6 @@ EPS = 1e-8 # small positive epsilon to avoid divide-by-zero
 
 # ensure all of the policies run expectedly
 # then test out performance of each one of them
-# [TODO] [DOING] refactor all with self.weights and super()
 class BudgetingPolicy(ABC):
     """
     Abstract Base Class of budgeting policies for training.
@@ -170,7 +169,7 @@ def _bounded_proportional_allocate(
     
     Allocate integers that:
     - sum exactly to 'total'
-    - each in [min_per, max_per] #[TODO] try unbounded, that is, [0, inf)
+    - each in [min_per, max_per] 
     - proportional to 'weights' (when possible)
     """
     N = weights.shape[0]
@@ -263,6 +262,7 @@ def _bounded_proportional_allocate(
     return alloc
 
 
+#[DONE] try unbounded, namely, [0, inf)
 def _unbounded_proportional_allocate(
     weights: np.ndarray,
     total: int,
@@ -702,7 +702,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                         render_bgr = (render_rgb[..., ::-1] * 255.0).astype(np.uint8)  # RGB->BGR
                         cv2.imwrite(os.path.join(mesh_bg_dir, f"{name}.png"), render_bgr)
                     except Exception as e:
-                        print(f"[WARNING] Could not save render for {name}: {e} (got {getattr(item['render'], 'shape', None)})")
+                        # print(f"[WARNING] Could not save render for {name}: {e} (got {getattr(item['render'], 'shape', None)})")
+                        pass
 
                     # Save heatmap (normalized)
                     try:

@@ -123,7 +123,7 @@ for policy in "${POLICIES[@]}"; do
                     --total_splats "$budget" \
                     --alloc_policy "$policy" \
                     --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
-                    --policy_path "${LOAD_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE" 2>&1; then
+                    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE"; then
                     # policy is computed during training already
 
                     render_end=$(date +%s)
@@ -145,7 +145,7 @@ for policy in "${POLICIES[@]}"; do
                 metrics_start=$(date +%s)
                 if python metrics.py \
                     -m "$SAVE_DIR" \
-                    --gs_type gs_mesh >> "$LOG_FILE" 2>&1; then
+                    --gs_type gs_mesh >> "$LOG_FILE"; then
                     
                     metrics_end=$(date +%s)
                     metrics_secs=$((metrics_end - metrics_start))

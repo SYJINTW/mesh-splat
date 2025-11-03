@@ -45,7 +45,7 @@ class Scene:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
             else:
                 self.loaded_iter = load_iteration
-            print("Loading trained model at iteration {}".format(self.loaded_iter))
+            print(f"Loading trained model at iteration {self.loaded_iter}")
 
         self.train_cameras = {}
         self.test_cameras = {}
@@ -153,14 +153,17 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
+            print(f"[INFO] Scene:: loaded gs model from iteration {self.loaded_iter}")
             self.gaussians.point_cloud = scene_info.point_cloud
-            if args.gs_type == "gs_mesh": #! [YC] need to aware of gs_type
+            if args.gs_type == "gs_mesh": #! [YC] need to be aware of gs_type
                 self.gaussians.triangles = scene_info.point_cloud.triangles
                 # >>>> [YC] add
                 self.gaussians.triangle_indices = scene_info.point_cloud.triangle_indices.cuda() # [YC] add
                 # <<<< [YC] add
         else: # [YC] note: first time training
-            # [YC] note: if using "gs_mesh", the create_from_pcd will use the one defined in mesh-splat/games/scene/gaussian_model_mesh.py
+            # [YC] note: if using "gs_mesh", the create_from_pcd() 
+            # will use the one defined in mesh-splat/games/scene/gaussian_model_mesh.py
+            # under class GaussianMeshModel(GaussianModel)
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
 
