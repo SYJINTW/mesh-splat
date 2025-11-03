@@ -18,9 +18,12 @@ WHETHER_OCCLUSION=(""  "--occlusion") # sanity check in the logfile
 
 ITERATION=1000
 
+EXP_NAME="1102_unbounded"
+
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
-BASE_OUTPUT_DIR="output/1102_unbounded/${SCENE_NAME}"
+BASE_OUTPUT_DIR="output/${EXP_NAME}/${SCENE_NAME}"
+BASE_LOG_DIR="log/${EXP_NAME}/${SCENE_NAME}"
 PLOT_DIR="${BASE_OUTPUT_DIR}/for_plot"
 
 # ======= Helpers ======
@@ -36,6 +39,7 @@ failed_experiments=0
 # ======= Setup Output Dirs and Logs ======
 
 mkdir -p "$BASE_OUTPUT_DIR"
+mkdir -p "$BASE_LOG_DIR"
 mkdir -p "$PLOT_DIR"
 
 # Timing summary file
@@ -123,7 +127,7 @@ for policy in "${POLICIES[@]}"; do
                     --total_splats "$budget" \
                     --alloc_policy "$policy" \
                     --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
-                    --policy_path "${LOAD_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE" 2>&1; then
+                    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE"; then
                     # policy is computed during training already
 
                     render_end=$(date +%s)
@@ -145,7 +149,7 @@ for policy in "${POLICIES[@]}"; do
                 metrics_start=$(date +%s)
                 if python metrics.py \
                     -m "$SAVE_DIR" \
-                    --gs_type gs_mesh >> "$LOG_FILE" 2>&1; then
+                    --gs_type gs_mesh >> "$LOG_FILE"; then
                     
                     metrics_end=$(date +%s)
                     metrics_secs=$((metrics_end - metrics_start))
@@ -186,6 +190,10 @@ for policy in "${POLICIES[@]}"; do
                 echo "-----------------------------------------------------------------"
                 echo ""
             } | tee -a "$LOG_FILE"
+
+            # Copy log file to centralized log directory
+            LOG_FILE_COPY="${BASE_LOG_DIR}/log_pipeline_${policy}_${budget}_${occlusion_tag}.log"
+            cp "$LOG_FILE" "$LOG_FILE_COPY"
 
             printf "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%s\n" \
                 "$policy" "$budget" "$occlusion_tag" "$train_secs" "$render_secs" "$metrics_secs" "$exp_secs" "$exp_status" >> "$TIMING_SUMMARY"
