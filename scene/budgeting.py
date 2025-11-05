@@ -18,6 +18,9 @@ from scene.cameras import Camera
 
 from utils.camera_utils import cameraList_from_camInfos
 
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+
 
 
 EPS = 1e-8 # small positive epsilon to avoid divide-by-zero
@@ -312,8 +315,6 @@ def _unbounded_proportional_allocate(
         norm_weights = np.ones(N, dtype=np.float32) / N
         print("[WARNING] sum of all weights are zero; distributing uniformly.")
 
-    # [DEBUG]
-    
     print(f"[DEBUG] Weights stats - min: {weights.min():.4f}, max: {weights.max():.4f}, mean: {weights.mean():.4f}, stdv: {weights.std():.4f}")
     
 
@@ -545,11 +546,13 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             mesh_path = f"{self.dataset_path}/mesh.obj"
             if os.path.exists(mesh_path):
                 p3d_mesh = load_objs_as_meshes([mesh_path]).to(self.device)
+                # [NOTE] this branch is taken
+                print(f"[DEBUG] Loaded textured mesh from {mesh_path} using PyTorch3D load_objs_as_meshes()")
             else:
-                print(f"[WARNING] Textured mesh not found at {mesh_path}, using white Trimesh mesh")
+                print(f"[DEBUG] Textured mesh not found at {mesh_path}, using white Trimesh mesh")
                 p3d_mesh = tm2p3d_mesh
         else:
-            print("[WARNING] No dataset_path provided, using white mesh")
+            print("[DEBUG] No dataset_path provided, using white mesh")
             p3d_mesh = tm2p3d_mesh
         
         num_faces = faces.shape[0]
@@ -625,11 +628,12 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                     "image_name": getattr(viewpoint_camera, "image_name", f"view_{idx}"),
                     "render": p3d_mesh_color_np,  # RGB in [0,1]
                     "gt": gt_img,                 # RGB in [0,1]
-                    "dist_map": dist_map          # [H,W] in [0,1]
+                    "dist_map": dist_map,          # [H,W] in [0,1]
+                    "p3d_mesh_color": p3d_mesh_color.cpu()
                 })
         
         if self.debugging:
-            self._save_debug_visualization(dist_map_all, per_view_debug)
+            self._save_debug_visualization(dist_map_all, per_view_debug=per_view_debug)
         
         # Normalize to [0, 1] and ensure positive weights
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
@@ -637,63 +641,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         return np.maximum(dist_norm, EPS).astype(np.float32)
 
-    @staticmethod
-    def _standardize_image_to_hwc3(arr, H: int, W: int) -> np.ndarray:
-        """
-        Convert various array shapes to float32 RGB in [0,1] with shape (H, W, 3).
-        Handles:
-        - (H, W, 3) or (H, W, 4)
-        - (3, H, W) or (4, H, W)
-        - (H*W, 3) or (3, H*W)
-        - (H, 3) or (W, 3) (only if H==W; best-effort)
-        """
-        img = np.asarray(arr)
-        if img.dtype == np.uint8:
-            img = img.astype(np.float32) / 255.0
-        else:
-            img = img.astype(np.float32)
-            # if values look like 0..255, normalize
-            if img.max() > 1.5:
-                img = img / 255.0
-
-        # 3D inputs
-        if img.ndim == 3:
-            # HWC
-            if img.shape[:2] == (H, W):
-                if img.shape[2] >= 3:
-                    return img[..., :3]
-            # CHW
-            if img.shape[0] in (3, 4) and img.shape[1] in (H, W) and img.shape[2] in (H, W):
-                chw = img
-                hwc = np.transpose(chw, (1, 2, 0))
-                return hwc[..., :3]
-
-        # 2D inputs
-        if img.ndim == 2:
-            h2, w2 = img.shape
-            # Flattened list of pixels: (H*W, 3)
-            if h2 == H * W and w2 == 3:
-                return img.reshape(H, W, 3)
-            # Transposed flattened: (3, H*W)
-            if h2 == 3 and w2 == H * W:
-                return img.T.reshape(H, W, 3)
-            # Degenerate (H, 3) or (W, 3) — best effort if square
-            if w2 == 3 and (h2 == H or h2 == W) and H == W:
-                try:
-                    return img.reshape(H, H, 3)
-                except Exception:
-                    pass
-
-        # 1D fallback: try total-size reshape
-        if img.ndim == 1 and img.size == H * W * 3:
-            return img.reshape(H, W, 3)
-
-        # Last-chance generic flatten -> reshape if size matches
-        if img.size == H * W * 3:
-            return img.ravel().reshape(H, W, 3)
-
-        raise ValueError(f"Unrecognized render shape: {getattr(arr, 'shape', None)} (expected compatible with {H}x{W}x3)")
-
+   
     def _save_debug_visualization(self, dist_map_all: np.ndarray, per_view_debug=None):
         """Save distortion map debug artifacts: per-view renders, heatmaps, and colored point cloud."""
         try:
@@ -711,15 +659,14 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             if per_view_debug is not None:
                 for item in per_view_debug:
                     name = str(item.get("image_name", f"view_{item.get('index', 0)}"))
+                    p3d_mesh_color = item["p3d_mesh_color"]
+                    print(f"[DEBUG] shape: {p3d_mesh_color.shape}, type: {type(p3d_mesh_color)}")
                     # Save rendered mesh background
                     try:
-                        H, W = self.image_height, self.image_width
-                        img = self._standardize_image_to_hwc3(item["render"], H, W)
-                        render_rgb = np.clip(img, 0.0, 1.0)
-                        render_bgr = (render_rgb[..., ::-1] * 255.0).astype(np.uint8)  # RGB->BGR
-                        cv2.imwrite(os.path.join(mesh_bg_dir, f"{name}.png"), render_bgr)
+                        p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
+                        p3d_mesh_color_pil.save(os.path.join(mesh_bg_dir, f"{name}.png"))
                     except Exception as e:
-                        # print(f"[WARNING] Could not save render for {name}: {e} (got {getattr(item['render'], 'shape', None)})")
+                        print(f"[WARNING] Could not save render for {name}: {e} (got {getattr(item['render'], 'shape', None)})")
                         pass
 
                     # Save heatmap (normalized)

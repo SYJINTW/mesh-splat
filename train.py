@@ -96,11 +96,15 @@ def load_with_white_bg(path):
     return img_out
 
 # [DONE] migrate this policy
-# [TODO] [DOING] extract the warmup stage out of the main training loop
+# [DONE] extract the warmup stage out of the main training loop
+    # use the flag --warmup_only to only run the warmup stage
 def warmup(viewpoint_cameras, p3d_mesh,
                image_height=800, image_width=800, faces_per_pixel=1,
                device="cuda"):
     """
+    [DEPRECATED]
+    migrated to budgeting.py::DistortionBasedBudgeting
+    
     The main idea is using the visual quality to decide how many Gaussians should we set on each triangle.
     First, we render the mesh from each viewpoint camera, and compare with the ground truth images.
     Then, we can get the distortion map (pixel-wise difference).
@@ -149,23 +153,23 @@ def warmup(viewpoint_cameras, p3d_mesh,
         )
         p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
         
-        # # Save rendered mesh background and heatmap for debugging
-        # if debugging:
-        #     # Transfer p3d_mesh_color to PIL Image for debugging
-        #     p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
-        #     p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
+        # Save rendered mesh background and heatmap for debugging
+        if debugging:
+            # Transfer p3d_mesh_color to PIL Image for debugging
+            p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
+            p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
             
-        #     # Compute heatmap (L2 difference)
-        #     diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
-        #     diff_normalized = diff / np.max(diff)  # normalize to [0,1]
+            # Compute heatmap (L2 difference)
+            diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
+            diff_normalized = diff / np.max(diff)  # normalize to [0,1]
 
-        #     # Plot & save heatmap
-        #     plt.figure(figsize=(8, 8))
-        #     plt.imshow(diff_normalized, cmap='hot')
-        #     plt.axis('off')
-        #     plt.tight_layout()
-        #     plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
-        #     plt.close()
+            # Plot & save heatmap
+            plt.figure(figsize=(8, 8))
+            plt.imshow(diff_normalized, cmap='hot')
+            plt.axis('off')
+            plt.tight_layout()
+            plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
+            plt.close()
         
         # Compute per-pixel absolute difference map
         dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # shape [H, W]. It will be in [0, 1]
