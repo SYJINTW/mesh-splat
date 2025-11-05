@@ -76,6 +76,10 @@ import matplotlib.cm as cm
 
 SCENE_NAME = "hotdog"
 
+# [TODO] 
+LOSS_CONVG_THRESH = 0.01
+
+
 def load_with_white_bg(path):
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
 
@@ -102,7 +106,7 @@ def warmup(viewpoint_cameras, p3d_mesh,
     Then, we can get the distortion map (pixel-wise difference).
     Second, we prioritize the triangles that project to high distortion pixels, and assign more Gaussians to them.
     """
-    #[TODO] also migrate the debugging logic
+    #[TODO] [DOING] also migrate the debugging logic
     debugging = True
     if debugging:
         heatmap_output_dir = Path(f"../distortion_heatmap")
@@ -497,6 +501,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 progress_bar.close()
 
             # Log and save
+            # [TODO] enable training report to observe loss and metrics during training
             # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
             #                 testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):

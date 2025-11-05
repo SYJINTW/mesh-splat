@@ -45,6 +45,15 @@ class BudgetingPolicy(ABC):
         Default allocate method without bounds.
         returns a list (numpy array) of number of splats per triangle
         """
+        
+        # Check if all weights are equal (uniform distribution)
+        # note, np handles array-like for us
+        if np.allclose(self.weights, self.weights[0], rtol=1e-5):
+            print(f"[DEBUG] All weights are equal ({self.weights[0]:.6f}). "
+                  "Allocation will be uniform."
+                  "If policy != uniform, weight computation might have failed."
+                  )
+        
         return _unbounded_proportional_allocate(self.weights, total_splats)
 
 
@@ -303,6 +312,12 @@ def _unbounded_proportional_allocate(
         norm_weights = np.ones(N, dtype=np.float32) / N
         print("[WARNING] sum of all weights are zero; distributing uniformly.")
 
+    # [DEBUG]
+    
+    print(f"[DEBUG] Weights stats - min: {weights.min():.4f}, max: {weights.max():.4f}, mean: {weights.mean():.4f}, stdv: {weights.std():.4f}")
+    
+
+
 
     # "Largest Remainder Method"
     alloc =  np.zeros((N,), dtype=np.int32)
@@ -392,6 +407,8 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
         fa = getattr(mesh, "face_adjacency", None)
         if fa is None or fa.size == 0:
         # No adjacency info; fall back to per-face normal magnitude (all 1)
+            print(f"[WARNING] PlanarityBasedBudgetingPolicy: Failed to compute MRL, fallback to uniform weights.")
+
             return np.ones((F,), dtype=np.float32)
         for a, b in fa:
             adj[int(a)].append(int(b))

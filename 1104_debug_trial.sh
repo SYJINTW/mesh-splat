@@ -5,20 +5,28 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 # ======= Config ======
 
 # BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # increasing order
-BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
+# BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
 
-POLICIES=("uniform" "random" "area" "planarity" "distortion")
+
+
+POLICIES=("area" "uniform" "random" "planarity" "distortion" "planarity2")
 WHETHER_OCCLUSION=(""  "--occlusion") # sanity check in the logfile
 
 
 ITERATION=1000
 
-EXP_NAME="1102_unbounded"
+EXP_NAME="1104_debug_trial"
+# set budget proportional to number of triangles
+# e.g. 0.5, 1, 1.5, 2 ... splats per triangle
+
+UNIT_BUDGETS=( 8.0 4.0 2.0 1.0 0.5 0.25 ) # splats per triangle
+
+
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
@@ -44,7 +52,7 @@ mkdir -p "$PLOT_DIR"
 
 # Timing summary file
 TIMING_SUMMARY="${BASE_OUTPUT_DIR}/pipeline_timing_summary.tsv"
-echo -e "policy\tbudget\trenderer\ttrain_secs\trender_secs\tmetrics_secs\ttotal_secs\tstatus" > "$TIMING_SUMMARY"
+echo -e "policy\tbudget\ttrain_secs\trender_secs\tmetrics_secs\ttotal_secs\tstatus" > "$TIMING_SUMMARY"
 
 # Failed experiments log
 FAILED_LOG="${BASE_OUTPUT_DIR}/failed_experiments.log"
@@ -52,7 +60,7 @@ FAILED_LOG="${BASE_OUTPUT_DIR}/failed_experiments.log"
 
 # ======= Main Loop ======
 for policy in "${POLICIES[@]}"; do
-    for budget in "${BUDGETS[@]}"; do
+    for budget in "${UNIT_BUDGETS[@]}"; do
         for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
 
             occlusion_tag="no_occlusion"
@@ -95,7 +103,7 @@ for policy in "${POLICIES[@]}"; do
                 --debugging \
                 --debug_freq 100 \
                 $IS_OCCLUSION \
-                --total_splats "$budget" \
+                --budget_per_tri "$budget" \
                 --alloc_policy "$policy" \
                 --gs_type gs_mesh -w --iteration "$ITERATION" >> "$LOG_FILE"; then
                 
@@ -124,7 +132,7 @@ for policy in "${POLICIES[@]}"; do
                     --gs_type gs_mesh \
                     --skip_train \
                     $IS_OCCLUSION \
-                    --total_splats "$budget" \
+                    --budget_per_tri "$budget" \
                     --alloc_policy "$policy" \
                     --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
                     --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE"; then
