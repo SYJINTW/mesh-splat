@@ -126,7 +126,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         print(f"[INFO] DatasetReader::Reading Mesh object from {path}/mesh.obj")
         mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
     else:
-        print(f"Reading Mesh object from {texture_obj_path}")
+        print(f"[INFO] Reading Mesh object from {texture_obj_path}")
         mesh_scene = trimesh.load(texture_obj_path, force='mesh')
 
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate
@@ -143,22 +143,26 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     triangles = vertices[torch.tensor(mesh_scene.faces).long()].float()
     
     # >>>> [YC] add
-    # Access texture info
-    print("type(mesh_scene.visual):", type(mesh_scene.visual)) # [YC] debug: should be TextureVisuals
-    print("mesh_scene.visual.uv.shape:", mesh_scene.visual.uv.shape) # [YC] debug: UV coordinates per vertex
-    print("mesh_scene.visual.material.image:", mesh_scene.visual.material.image) # [YC] debug: PIL image
+    has_uv = False # [YC] [Note]: Hardcode to not to use UV texture to support mesh from colmap, it should be True if the mesh is from SuGaR
     
-    # Extract texture as numpy
-    texture_img = np.array(mesh_scene.visual.material.image)  # (H, W, 3) or (H, W, 4)
-    H, W = texture_img.shape[:2]
+    if has_uv:
+        print("[INFO] Mesh has UV coordinates and texture PNG.")
+        
+        # Access texture info
+        print("type(mesh_scene.visual):", type(mesh_scene.visual)) # [YC] debug: should be TextureVisuals
+        print("mesh_scene.visual.uv.shape:", mesh_scene.visual.uv.shape) # [YC] debug: UV coordinates per vertex
+        print("mesh_scene.visual.material.image:", mesh_scene.visual.material.image) # [YC] debug: PIL image
     
-    # Get per-vertex UVs
-    uv_coords = mesh_scene.visual.uv  # (n_vertices, 2), values in [0,1]
-    
-    # Face UVs (map vertex index -> uv)
-    face_uvs = uv_coords[faces]  # (n_faces, 3, 2)
+        # Extract texture as numpy
+        texture_img = np.array(mesh_scene.visual.material.image)  # (H, W, 3) or (H, W, 4)
+        H, W = texture_img.shape[:2]
+        
+        # Get per-vertex UVs
+        uv_coords = mesh_scene.visual.uv  # (n_vertices, 2), values in [0,1]
+        
+        # Face UVs (map vertex index -> uv)
+        face_uvs = uv_coords[faces]  # (n_faces, 3, 2)
     # <<<< [YC] add
-    
     
     # [NOTE] [SAM] this is weird, why merge train and test cams, even if not in --eval mode?
     if not eval:
@@ -205,26 +209,37 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         # ---------------------------------------------------------------------------- #
         #                 Get initial Gaussian colors from texture map                 #
         # ---------------------------------------------------------------------------- #
-        face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
-        H, W = texture_img.shape[:2]        
+        if has_uv:
+            face_uvs = mesh_scene.visual.uv[faces]  # (n_faces, 3, 2)
+            H, W = texture_img.shape[:2]        
+            
+            # Convert UVs (3 per face) to pixel coordinates
+            px = (face_uvs[..., 0] * (W - 1)).astype(int)
+            py = ((1 - face_uvs[..., 1]) * (H - 1)).astype(int)
+            
+            # Clamp
+            px = np.clip(px, 0, W - 1)
+            py = np.clip(py, 0, H - 1)
         
-        # Convert UVs (3 per face) to pixel coordinates
-        px = (face_uvs[..., 0] * (W - 1)).astype(int)
-        py = ((1 - face_uvs[..., 1]) * (H - 1)).astype(int)
-        
-        # Clamp
-        px = np.clip(px, 0, W - 1)
-        py = np.clip(py, 0, H - 1)
-        
-        # Sample 3 vertex colors per triangle
-        tri_vertex_colors = texture_img[py, px, :3]   # (n_faces, 3, 3)
-        
-        # Average per-triangle color
-        tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
-        
-        print("tri_avg_colors:", tri_avg_colors.shape) # [YC] debug
-        # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
-        
+            # Sample 3 vertex colors per triangle
+            tri_vertex_colors = texture_img[py, px, :3]   # (n_faces, 3, 3)
+            
+            # Average per-triangle color
+            tri_avg_colors = tri_vertex_colors.mean(axis=1)  # (n_faces, 3)
+            
+            print("tri_avg_colors:", tri_avg_colors.shape) # [YC] debug
+            # colors = np.repeat(tri_avg_colors, num_splats, axis=0)  # (num_pts, 3)
+        else:
+            print("[INFO] Mesh has no UV/texture — using vertex colors instead.")
+            if isinstance(mesh_scene.visual, trimesh.visual.color.ColorVisuals):
+                vertex_colors = mesh_scene.visual.vertex_colors[:, :3]
+                print(f"[INFO] Loaded vertex colors: {vertex_colors.shape}")
+                faces = mesh_scene.faces
+                tri_vertex_colors = vertex_colors[faces]  # (n_faces, 3, 3)
+                tri_avg_colors = tri_vertex_colors.mean(axis=1)
+            else:
+                raise ValueError("Mesh has neither UV/texture nor vertex colors!")
+            
         # We create random points inside the bounds triangles
         xyz_list = []
         alpha_list = []
@@ -286,7 +301,8 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         print("Created MeshPointCloud with", pcd.points.shape[0], "points.")
 
         # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)
-        # storePly(ply_path, pcd.points, colors)
+        storePly(ply_path, pcd.points, colors)
+        print("Stored initial point cloud to", ply_path)
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,

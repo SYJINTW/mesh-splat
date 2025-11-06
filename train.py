@@ -47,6 +47,7 @@ import numpy as np
 from pathlib import Path
 
 from pytorch3d.io import load_objs_as_meshes
+from pytorch3d.io import load_ply
 from pytorch3d.renderer import (
     AmbientLights,
     RasterizationSettings, 
@@ -254,7 +255,6 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     
     # --------------------------- Warm Up Stage -------------------------- #
     
-    
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
@@ -264,7 +264,23 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     textured_mesh = None
     if texture_obj_path != "":
         print("Loading textured mesh for background rendering...")
-        textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+        
+        if texture_obj_path.lower().endswith(".ply"): # From SuGaR
+            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+        elif texture_obj_path.lower().endswith(".obj"): # From Colmap, download from https://nerfbaselines.github.io/
+            mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
+            verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
+            faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
+            colors = torch.tensor(mesh_tm.visual.vertex_colors[:, :3], dtype=torch.float32) / 255.0
+            textured_mesh = Meshes(verts=[verts], faces=[faces],
+                        textures=TexturesVertex(verts_features=[colors])).to("cuda")
+            # Combine into a textured mesh
+            textured_mesh = Meshes(
+                verts=[verts],
+                faces=[faces],
+                textures=TexturesVertex(verts_features=[colors])
+            ).to("cuda")
+        
     # <<<< [YC] add
     
     
@@ -652,9 +668,6 @@ if __name__ == "__main__":
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
     parser.add_argument("--warmup_only", action='store_true', help="only run warmup stage and exit, no entering training loop")
     
-    
-    
-
     lp = ModelParams(parser)
     args, _ = parser.parse_known_args(sys.argv[1:])
     lp.num_splats = args.num_splats

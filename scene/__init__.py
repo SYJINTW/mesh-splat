@@ -71,7 +71,6 @@ class Scene:
                 # Our main experiments use this path
                 # here the budgeting policy and texture obj path are passed
                 
-                
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
