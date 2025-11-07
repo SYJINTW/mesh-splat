@@ -81,7 +81,9 @@ LOSS_CONVG_THRESH = 0.01
 
 
 def load_with_white_bg(path):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  
+    # keep alpha if present
+    # shape: [H,W,3] or [H,W,4]
 
     if img.shape[2] == 4:  # RGBA
         rgb = img[:, :, :3].astype(np.float32) / 255.0
@@ -95,151 +97,29 @@ def load_with_white_bg(path):
     img_out = img_out[:, :, ::-1]
     return img_out
 
-# [DONE] migrate this policy
-# [DONE] extract the warmup stage out of the main training loop
-    # use the flag --warmup_only to only run the warmup stage
-def warmup(viewpoint_cameras, p3d_mesh,
-               image_height=800, image_width=800, faces_per_pixel=1,
-               device="cuda"):
-    """
-    [DEPRECATED]
-    migrated to budgeting.py::DistortionBasedBudgeting
-    
-    The main idea is using the visual quality to decide how many Gaussians should we set on each triangle.
-    First, we render the mesh from each viewpoint camera, and compare with the ground truth images.
-    Then, we can get the distortion map (pixel-wise difference).
-    Second, we prioritize the triangles that project to high distortion pixels, and assign more Gaussians to them.
-    """
-    #[DONE]  also migrate the debugging logic
-    debugging = True
-    if debugging:
-        heatmap_output_dir = Path(f"../distortion_heatmap")
-        heatmap_output_dir.mkdir(parents=True, exist_ok=True)
-        mesh_bg_output_dir = Path(f"../mesh_bg")
-        mesh_bg_output_dir.mkdir(parents=True, exist_ok=True)
-        filtered_obj_output_dir = Path(f"../filtered_obj")
-        filtered_obj_output_dir.mkdir(parents=True, exist_ok=True)
+def load_image_with_background_compositing(path, image_height=800, image_width=800, white_background=True):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
+    # shape: [H,W,3] or [H,W,4]
 
-    # Load mesh with Trimesh
-    tm_mesh = trimesh.load("/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj", process=False)
-    
-    # Change Trimesh into PyTorch3D, and also handle texture from UV map
-    verts = torch.tensor(tm_mesh.vertices, dtype=torch.float32, device=device)
-    faces = torch.tensor(tm_mesh.faces, dtype=torch.int64, device=device)  # keep order!
-    verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
-    textures = TexturesVertex(verts_features=verts_rgb)
-    tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
-    
-    # Load mesh with PyTorch3D
-    p3d_mesh = load_objs_as_meshes(["/mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj"]).to(device)
+    # Resize if dimensions don't match
+    if img.shape[0] != image_height or img.shape[1] != image_width:
+        img = cv2.resize(img, (image_width, image_height), interpolation=cv2.INTER_LINEAR)
 
-    num_faces = faces.shape[0]
-    dist_map_all = np.zeros(num_faces, dtype=np.float32)
-    for i, viewpoint_camera in enumerate(viewpoint_cameras):
-        # Load ground truth image
-        gt_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_camera.image_name}.png"
-        gt_img = load_with_white_bg(gt_image_path) # (W, H)
+    if img.shape[2] == 4:  # RGBA
+        rgb = img[:, :, :3].astype(np.float32) / 255.0
+        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
         
-        # Render p3d_mesh with PyTorch3D for comparing the visual quality
-        p3d_mesh_color, p3d_mesh_depth, p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, p3d_mesh,
-                                                            image_height=image_height, image_width=image_width,
-                                                            faces_per_pixel=faces_per_pixel,
-                                                            device=device)
+        # Choose background based on flag, black or white
+        bg_color = 1.0 if white_background else 0.0
+        bg = np.full_like(rgb, bg_color)
         
-        # Convert p3d_mesh_color to NumPy for computing distortion
-        p3d_mesh_color_np = (
-            p3d_mesh_color[0, ..., :3]              # (H, W, 3)
-            .detach().cpu().numpy()                 # → NumPy
-        )
-        p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
-        
-        # Save rendered mesh background and heatmap for debugging
-        if debugging:
-            # Transfer p3d_mesh_color to PIL Image for debugging
-            p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
-            p3d_mesh_color_pil.save(mesh_bg_output_dir/f"r_{i}.png")
-            
-            # Compute heatmap (L2 difference)
-            diff = np.sqrt(np.sum((gt_img - p3d_mesh_color_np) ** 2, axis=2))  # (H, W)
-            diff_normalized = diff / np.max(diff)  # normalize to [0,1]
+        img_out = rgb * alpha + bg * (1 - alpha)
+    else:
+        img_out = img[:, :, :3].astype(np.float32) / 255.0
 
-            # Plot & save heatmap
-            plt.figure(figsize=(8, 8))
-            plt.imshow(diff_normalized, cmap='hot')
-            plt.axis('off')
-            plt.tight_layout()
-            plt.savefig(heatmap_output_dir/f"r_{i}.png", dpi=300, bbox_inches='tight', pad_inches=0)
-            plt.close()
-        
-        # Compute per-pixel absolute difference map
-        dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # shape [H, W]. It will be in [0, 1]
-        # print("dist_map:", dist_map.shape, dist_map.dtype, dist_map.min(), dist_map.max(), dist_map.mean())
-        
-        # Render tm2p3d_mesh with PyTorch3D
-        tm2p3d_mesh_color, tm2p3d_mesh_depth, tm2p3d_fragments = mesh_renderer_pytorch3d(viewpoint_camera, tm2p3d_mesh,
-                                                                                        image_height=image_height, image_width=image_width,
-                                                                                        faces_per_pixel=faces_per_pixel,
-                                                                                        device=device)
-        
-        # Face index per pixel
-        face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0].cpu().numpy()  # (H, W). face_idx_map = -1 means background
-        # print("face_idx_map:", face_idx_map.shape, face_idx_map.dtype, face_idx_map.min(), face_idx_map.max(), face_idx_map.mean())
-        
-        # Flatten arrays
-        face_idx_flat = face_idx_map.flatten()
-        dist_flat = dist_map.flatten()
-        
-        # Filter out invalid faces (e.g., -1)
-        valid_mask = face_idx_flat >= 0
-        face_idx_flat = face_idx_flat[valid_mask]
-        dist_flat = dist_flat[valid_mask]
-        
-        # Compute sum and counts per face
-        sum_dist = np.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
-        count = np.bincount(face_idx_flat, minlength=num_faces)
-
-        # Avoid divide-by-zero
-        mean_dist = np.zeros(num_faces, dtype=np.float32)
-        mask = count > 0
-        mean_dist[mask] = sum_dist[mask] / count[mask]
-        
-        # Update overall distortion map
-        dist_map_all += mean_dist
-    
-    if debugging:
-        dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.ptp() + 1e-8)
-        cmap = cm.get_cmap('jet')
-        colors = cmap(dist_norm)[:, :3]  # (num_faces, 3), RGB in [0,1]
-        
-        # Compute per-vertex color by averaging colors of adjacent faces
-        vertex_colors = np.zeros((len(tm_mesh.vertices), 3))
-        for f_id, verts in enumerate(tm_mesh.faces):
-            vertex_colors[verts] += colors[f_id]
-            
-        counts = np.bincount(tm_mesh.faces.flatten(), minlength=len(tm_mesh.vertices))
-        vertex_colors /= np.maximum(counts[:, None], 1e-8)
-
-        # Build Open3D point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(tm_mesh.vertices)
-        pcd.colors = o3d.utility.Vector3dVector(vertex_colors)
-
-        # Save as PLY (works perfectly in MeshLab)
-        o3d.io.write_point_cloud("../distortion_heatmap.ply", pcd)
-    
-    # Decide triangle filter based on distortion map
-    print("dist_map_all:", dist_map_all.shape, dist_map_all.dtype, dist_map_all.min(), dist_map_all.max(), dist_map_all.mean())
-    
-    # Normalize distortion map to int in [0,5] based on the distortion values
-    # Normalize to [0, 1]
-    dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + 1e-8)
-    
-    # Scale to [0, 5] and convert to int
-    dist_int = np.round(dist_norm * 5).astype(np.int32)
-    print("dist_int:", dist_int.shape, dist_int.dtype, dist_int.min(), dist_int.max(), dist_int.mean())
-
-    print("Saving number of Gaussians in each triangle...")
-    np.save("/mnt/data1/syjintw/NEU/dataset/hotdog/num_of_gaussians.npy", dist_int)
+    # Convert BGR to RGB because OpenCV loads in BGR order
+    img_out = img_out[:, :, ::-1]
+    return img_out
    
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
             debug_from, save_xyz,
@@ -257,16 +137,20 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = gaussianModel[gs_type](dataset.sh_degree) # [YC] note: nothing changing here
-    print("Training func policy_path:", policy_path)
+    print("[INFO] Training() policy_path:", policy_path)
         
     # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
     textured_mesh = None
+    mesh_type = dataset.mesh_type
     if texture_obj_path != "":
-        print("Loading textured mesh for background rendering...")
+        print("[INFO] Loading textured mesh for background rendering...")
         
-        if texture_obj_path.lower().endswith(".obj"): # From SuGaR
-            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
-        elif texture_obj_path.lower().endswith(".ply"): # From Colmap, download from https://nerfbaselines.github.io/
+        if mesh_type == "sugar": # From SuGaR
+            assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
+            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
+             
+        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
+            assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
             mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
             verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
             faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
@@ -279,7 +163,10 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 faces=[faces],
                 textures=TexturesVertex(verts_features=[colors])
             ).to("cuda")
-        
+        else:
+            print("[ERROR] Unknown/Unsupported mesh type!")        
+    
+    assert textured_mesh is not None, "[ERROR] Textured mesh is not loaded properly!"
     # <<<< [YC] add
     
     
@@ -450,7 +337,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 # ----------------------- Background image for training ---------------------- #
                 img_to_save = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
                 img_pil = TF.to_pil_image(img_to_save)
-                img_pil.save(check_path/f"{iteration}_training_bg.png")
+                img_pil.save(check_path/f"{iteration}_training_mesh_bg.png")
                 
                 if gs_type == "gs_mesh":
                     # ------------- Render mesh background and depth background ------------- #

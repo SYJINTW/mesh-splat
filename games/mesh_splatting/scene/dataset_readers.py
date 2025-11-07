@@ -115,6 +115,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         budgeting_policy_name: str = "uniform",
         min_splats_per_tri: int = 0,
         max_splats_per_tri: int = 8,
+        mesh_type: str = "sugar",
         # <<<< [SAM] add
 ) -> SceneInfo:
     print("Reading Training Transforms")
@@ -128,6 +129,10 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     else:
         print(f"[INFO] Reading Mesh object from {texture_obj_path}")
         mesh_scene = trimesh.load(texture_obj_path, force='mesh')
+
+    # [TODO] check connectivity here
+    # test to load with pytorch3d
+
 
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate
     mesh_scene.apply_transform(trimesh.transformations.rotation_matrix(
@@ -168,11 +173,10 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         face_uvs = uv_coords[faces]  # (n_faces, 3, 2)
     # <<<< [YC] add
     
-    # [NOTE] [SAM] this is weird, why merge train and test cams, even if not in --eval mode?
+    # [NOTE] this is weird, why merge train and test cams, even if not in --eval mode?
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
-    # <<<< [SAM]
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 

@@ -53,7 +53,7 @@ class BudgetingPolicy(ABC):
         # note, np handles array-like for us
         if np.allclose(self.weights, self.weights[0], rtol=1e-5):
             print(f"[DEBUG] All weights are equal ({self.weights[0]:.6f}). "
-                  "Allocation will be uniform."
+                  "Allocation will be uniform. "
                   "If policy != uniform, weight computation might have failed."
                   )
         
@@ -169,7 +169,6 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
 
 
-# [NOTE] need to explain this with pseudocode or paragraphs in the paper
 def _bounded_proportional_allocate(
     weights: np.ndarray,
     total: int,
@@ -343,7 +342,11 @@ def _unbounded_proportional_allocate(
     # calculate the correlation coefficient 
     # to see how far off alloc[]:int is from weights[]:float
     expected_alloc = norm_weights * total  # ideal fractional allocation
-    correlation = np.corrcoef(norm_weights, alloc / total)[0,1] # the result is [[1, corr],[corr,1]]
+    if np.allclose(norm_weights, norm_weights[0], rtol=1e-9):
+        correlation = 1.0  # Perfect correlation for uniform distribution
+    else:
+        correlation = np.corrcoef(norm_weights, alloc / total)[0,1]
+        # the result is [[1, corr],[corr,1]]
     rmse = np.sqrt(np.mean((alloc - expected_alloc) ** 2))
     
     print(f"[DEBUG] Allocation quality metrics:")
@@ -521,7 +524,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         return img_out
 
 
-    # [TODO] check the heatmap point cloud against the mesh, the coordinates should align
+    # [DONE] check the heatmap point cloud against the mesh, the coordinates should align
     def _compute_distortion_weights(self) -> np.ndarray:
         """
         Compute per-triangle distortion weights by rendering from all viewpoints.
@@ -532,27 +535,37 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         print("[INFO] DistortionMapBudgetingPolicy:: Computing distortion weights...")
         
-        # Convert trimesh to PyTorch3D meshes
-        verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
-        faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
-        
-        # Create mesh for rasterization (white texture for face indexing)
-        verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
-        textures = TexturesVertex(verts_features=verts_rgb)
-        tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
-        
-        # Load textured mesh for rendering
+        # Load textured mesh for rendering (do this FIRST to get correct transforms)
         if self.dataset_path:
             mesh_path = f"{self.dataset_path}/mesh.obj"
             if os.path.exists(mesh_path):
                 p3d_mesh = load_objs_as_meshes([mesh_path]).to(self.device)
                 # [NOTE] this branch is taken
                 print(f"[DEBUG] Loaded textured mesh from {mesh_path} using PyTorch3D load_objs_as_meshes()")
+                
+                # Extract vertices and faces WITH PyTorch3D's coordinate system transforms
+                verts = p3d_mesh.verts_packed()
+                faces = p3d_mesh.faces_packed()
             else:
-                print(f"[DEBUG] Textured mesh not found at {mesh_path}, using white Trimesh mesh")
-                p3d_mesh = tm2p3d_mesh
+                print(f"[DEBUG] Textured mesh not found at {mesh_path}, using Trimesh")
+                # Fallback to manual construction
+                verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
+                faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
+                mesh_path = None
         else:
-            print("[DEBUG] No dataset_path provided, using white mesh")
+            print("[DEBUG] No dataset_path provided, using Trimesh mesh")
+            verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
+            faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
+            mesh_path = None
+    
+        # Create mesh for rasterization (white texture for face indexing)
+        # Use the SAME verts/faces as the textured mesh
+        verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
+        textures = TexturesVertex(verts_features=verts_rgb)
+        tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
+    
+        # If not loaded from file, construct white trimesh 3D mesh
+        if mesh_path is None:
             p3d_mesh = tm2p3d_mesh
         
         num_faces = faces.shape[0]
@@ -633,11 +646,28 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 })
         
         if self.debugging:
+            
+            # Normalize dist_map_all FIRST for debugging
+            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
+            
+            # save distortion point cloud, heatmap, and per-view rendered mesh
             self._save_debug_visualization(dist_map_all, per_view_debug=per_view_debug)
         
-        # Normalize to [0, 1] and ensure positive weights
+            # check mesh format and coordinate systems
+            print(f"[DEBUG] p3d_mesh verts range: {p3d_mesh.verts_packed().min():.4f} to {p3d_mesh.verts_packed().max():.4f}")
+            print(f"[DEBUG] tm2p3d_mesh verts range: {tm2p3d_mesh.verts_packed().min():.4f} to {tm2p3d_mesh.verts_packed().max():.4f}")
+            print(f"[DEBUG] Verts match: {torch.allclose(p3d_mesh.verts_packed(), tm2p3d_mesh.verts_packed())}")
+            print(f"[DEBUG] Faces match: {torch.equal(p3d_mesh.faces_packed(), tm2p3d_mesh.faces_packed())}")
+            
+            # check weights
+            print(f"[DEBUG] Distortion weights computed:")
+            print(f"  - Non-zero triangles: {np.count_nonzero(dist_norm)}/{num_faces}")
+            print(f"  - Weight range: [{dist_norm.min():.4f}, {dist_norm.max():.4f}]")
+        else:
+            # Normalize to [0, 1] and ensure positive weights (non-debugging path)
+            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
+            
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
-        dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
         
         return np.maximum(dist_norm, EPS).astype(np.float32)
 
@@ -705,4 +735,10 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print(f"[INFO] Saved distortion debug to {base_dir}")
         except Exception as e:
             print(f"[WARNING] Could not save debug visualization: {e}")
+
+
+
+
+
+
 
