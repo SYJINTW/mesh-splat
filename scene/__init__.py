@@ -69,7 +69,7 @@ class Scene:
                 print("Found transforms_train.json file, assuming Blender_Mesh dataset!")
                 
                 # Our main experiments use this path
-                # here the budgeting policy and texture obj path are passed
+                # the budgeting policy and texture obj path are passed to the dataset reader
                 
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
@@ -81,6 +81,7 @@ class Scene:
                     total_splats=args.total_splats,
                     budget_per_tri=args.budget_per_tri,
                     budgeting_policy_name=args.alloc_policy,
+                    mesh_type=args.mesh_type
                     # <<<< [Sam] add
                 )
             elif args.gs_type == "gs_flame":

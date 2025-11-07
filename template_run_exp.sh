@@ -20,8 +20,13 @@ ITERATION=1000
 
 EXP_NAME="1102_unbounded"
 
+DATASET_DIR="/mnt/data1/samk/NEU/dataset/hotdog"
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
-DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/hotdog"
+MESH_TYPE="colmap" # "sugar" or "colmap"
+MESH_FILE="$DATASET_DIR/colmap_mesh.ply" # "mesh.obj" for sugar, "mesh.ply" for colmap
+
+
+
 BASE_OUTPUT_DIR="output/${EXP_NAME}/${SCENE_NAME}"
 BASE_LOG_DIR="log/${EXP_NAME}/${SCENE_NAME}"
 PLOT_DIR="${BASE_OUTPUT_DIR}/for_plot"
@@ -51,9 +56,10 @@ FAILED_LOG="${BASE_OUTPUT_DIR}/failed_experiments.log"
 > "$FAILED_LOG" # Clear the file
 
 # ======= Main Loop ======
-for policy in "${POLICIES[@]}"; do
-    for budget in "${BUDGETS[@]}"; do
-        for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
+# for scene_name in "${SCENE_NAMES[@]}"; do
+for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
+    for policy in "${POLICIES[@]}"; do
+        for budget in "${BUDGETS[@]}"; do
 
             occlusion_tag="no_occlusion"
             if [ "$IS_OCCLUSION" == "--occlusion" ]; then
@@ -91,7 +97,8 @@ for policy in "${POLICIES[@]}"; do
             if python train.py --eval \
                 -s "$DATASET_DIR" \
                 -m "$SAVE_DIR" \
-                --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+                --texture_obj_path "$MESH_FILE" \
+                --mesh_type "$MESH_TYPE" \
                 --debugging \
                 --debug_freq 100 \
                 $IS_OCCLUSION \
@@ -126,7 +133,7 @@ for policy in "${POLICIES[@]}"; do
                     $IS_OCCLUSION \
                     --total_splats "$budget" \
                     --alloc_policy "$policy" \
-                    --texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+                    --texture_obj_path "$MESH_FILE" \
                     --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" >> "$LOG_FILE"; then
                     # policy is computed during training already
 

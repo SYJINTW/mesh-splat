@@ -142,8 +142,12 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     faces = mesh_scene.faces
     triangles = vertices[torch.tensor(mesh_scene.faces).long()].float()
     
+    
     # >>>> [YC] add
-    has_uv = False # [YC] [Note]: Hardcode to not to use UV texture to support mesh from colmap, it should be True if the mesh is from SuGaR
+    has_uv = (mesh_type == "sugar")
+    # [YC] [NOTE] set to false support mesh from colmap; otherwise true for sugar-generated mesh
+    
+    print(f"[DEBUG] mesh_type: {mesh_type}, has_uv: {has_uv}")
     
     if has_uv:
         print("[INFO] Mesh has UV coordinates and texture PNG.")

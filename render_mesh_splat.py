@@ -126,6 +126,8 @@ if __name__ == "__main__":
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
     parser.add_argument("--budget_per_tri", type=float, default=1.0, help="set the total number of splats to be this number * number of triangles")
     # parser.add_argument("--drop_budget", type=int, help="drop until only this number of splats remain in the scene.")
+    parser.add_argument('--mesh_type', type=str, default="sugar", help="textured mesh type: sugar, colmap, or others")
+    
     # <<<< [Sam] add
     
     
@@ -137,6 +139,7 @@ if __name__ == "__main__":
     model.total_splats = args.total_splats
     model.alloc_policy = args.alloc_policy
     model.budget_per_tri = args.budget_per_tri
+    model.mesh_type = args.mesh_type
     # model.drop_budget = args.drop_budget
     # <<<< [SAM] add
     

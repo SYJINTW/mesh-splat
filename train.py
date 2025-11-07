@@ -75,7 +75,6 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-SCENE_NAME = "hotdog"
 
 # [TODO] 
 LOSS_CONVG_THRESH = 0.01
@@ -111,7 +110,7 @@ def warmup(viewpoint_cameras, p3d_mesh,
     Then, we can get the distortion map (pixel-wise difference).
     Second, we prioritize the triangles that project to high distortion pixels, and assign more Gaussians to them.
     """
-    #[TODO] [DOING] also migrate the debugging logic
+    #[DONE]  also migrate the debugging logic
     debugging = True
     if debugging:
         heatmap_output_dir = Path(f"../distortion_heatmap")
@@ -265,9 +264,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     if texture_obj_path != "":
         print("Loading textured mesh for background rendering...")
         
-        if texture_obj_path.lower().endswith(".ply"): # From SuGaR
+        if texture_obj_path.lower().endswith(".obj"): # From SuGaR
             textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
-        elif texture_obj_path.lower().endswith(".obj"): # From Colmap, download from https://nerfbaselines.github.io/
+        elif texture_obj_path.lower().endswith(".ply"): # From Colmap, download from https://nerfbaselines.github.io/
             mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
             verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
             faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
@@ -667,6 +666,7 @@ if __name__ == "__main__":
     parser.add_argument("--budget_per_tri", type=float, default=1.0, help="set the total number of splats to be this number * number of triangles")
     parser.add_argument("--alloc_policy", type=str, default="area", help="Allocation policy for splats (default: area)")
     parser.add_argument("--warmup_only", action='store_true', help="only run warmup stage and exit, no entering training loop")
+    parser.add_argument('--mesh_type', type=str, default="sugar", help="textured mesh type: sugar, colmap, or others")
     
     lp = ModelParams(parser)
     args, _ = parser.parse_known_args(sys.argv[1:])
@@ -679,6 +679,7 @@ if __name__ == "__main__":
     lp.budget_per_tri = args.budget_per_tri
     lp.alloc_policy = args.alloc_policy 
     lp.warmup_only = args.warmup_only
+    lp.mesh_type = args.mesh_type
     # <<<< [Sam] add
 
     op = optimizationParamTypeCallbacks[args.gs_type](parser)
