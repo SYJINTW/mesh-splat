@@ -174,3 +174,24 @@ CUDA_VISIBLE_DEVICES=2 python metrics.py \
 
 ### GaMeS
 Tricky part: Also using "gs_type" is “gs_mesh”
+
+### [YC] note
+```bash
+CUDA_VISIBLE_DEVICES=0 python train.py --eval \
+-s /mnt/data1/syjintw/NEU/dataset/hotdog \
+-m output/hotdog_testing \
+--gs_type gs_mesh -w --iteration 10 \
+--mesh_type colmap --texture_obj_path /mnt/data1/syjintw/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply \
+--debugging --debug_freq 1 \
+--occlusion
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=3 python train.py --eval \
+-s /mnt/data1/syjintw/NEU/dataset/bicycle \ 
+-m output/hotdog_testing \
+--gs_type gs_mesh -w --iteration 10 \
+--mesh_type colmap --texture_obj_path /mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply \
+--debugging --debug_freq 1 \
+--occlusion
+```

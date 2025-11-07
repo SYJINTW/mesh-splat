@@ -131,7 +131,6 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             # <<<< [YC] add
             ):
     
-    
     # --------------------------- Warm Up Stage -------------------------- #
     
     first_iter = 0
@@ -197,8 +196,10 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     # --------------------------- Load background image -------------------------- #
     background_image_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/r_0.png"
     img = Image.open(background_image_path).convert("RGB")
-    viewpoint_camera_height = 800
-    viewpoint_camera_width = 800
+    # viewpoint_camera_height = 800
+    # viewpoint_camera_width = 800
+    viewpoint_camera_height = 3286
+    viewpoint_camera_width = 4946
     img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
     transform = T.Compose([
         T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
@@ -227,10 +228,12 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
+            print("[INFO] network_gui connected")
             try:
                 net_image_bytes = None
                 custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
                 if custom_cam != None:
+                    print("[INFO] Received custom camera for rendering")
                     # net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
                     net_image = render(custom_cam, gaussians, pipe, background, background_depth, scaling_modifer)["render"] # [YC] add
                     net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2,
@@ -261,31 +264,32 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # ---------------------------------------------------------------------------- #
         viewpoint_camera_height = viewpoint_cam.image_height
         viewpoint_camera_width = viewpoint_cam.image_width
-
+        print("[DEBUG] viewpoint_camera_height:", viewpoint_camera_height, "viewpoint_camera_width:", viewpoint_camera_width)
+        
         transform = T.Compose([
             T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
         ])
         
         # ------------------------------ Mesh background ----------------------------- #
         bg = None
-        if textured_mesh is None:
-            # print("Loading precaptured background for rendering...")
-            bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
-            img = Image.open(bg_image_path).convert("RGB")
-            img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
-            bg = transform(img).to(torch.float32).cuda()
+        # if textured_mesh is None:
+        #     # print("Loading precaptured background for rendering...")
+        #     bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
+        #     img = Image.open(bg_image_path).convert("RGB")
+        #     img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
+        #     bg = transform(img).to(torch.float32).cuda()
         
         # ------------------------------ Mesh depth background ----------------------------- #
         bg_depth = None
-        if textured_mesh is None:
-            # print("Loading precaptured depth for rendering...")
-            bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
-            bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
+        # if textured_mesh is None:
+        #     # print("Loading precaptured depth for rendering...")
+        #     bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
+        #     bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
 
         # ------------------------------ Pure background ----------------------------- #
         pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
-        pure_bg = pure_bg.expand(3, viewpoint_camera_height, viewpoint_camera_width)
+        pure_bg = pure_bg.expand(3, viewpoint_camera_height, viewpoint_camera_width) # (H, W)
         
         # --------------------- Pure depth background (all zeros) -------------------- #
         pure_bg_depth = torch.full((1, viewpoint_camera_height, viewpoint_camera_width), 0, dtype=torch.float32, device="cuda")

@@ -35,13 +35,19 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     if bg_color is not None and bg_depth is not None:
         pass  # Both bg_color and bg_depth are provided, no need to render textured mesh
     elif bg_color is None and bg_depth is not None and textured_mesh is not None:
-        bg_color, _, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh)
+        bg_color, _, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width)
     # Using textured mesh for depth
     elif bg_color is not None and bg_depth is None and textured_mesh is not None:
-        _, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh)
+        _, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width)
     # Using textured mesh for both color and depth
     elif bg_color is None and bg_depth is None and textured_mesh is not None:
-        bg_color, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh)
+        bg_color, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width)
     else:
         raise ValueError("At least one of bg_color, bg_depth, or textured_mesh must be provided.")
                

@@ -59,6 +59,17 @@ class Scene:
                 scene_info = sceneLoadTypeCallbacks["Colmap_Mesh"](
                     args.source_path, args.images, args.eval, args.num_splats, args.meshes
                 )
+            # [YC] add gs_mesh type
+            elif args.gs_type == "gs_mesh":
+                scene_info = sceneLoadTypeCallbacks["Colmap_Single_Mesh"](
+                    args.source_path, args.images, args.eval, args.num_splats[0], 
+                    texture_obj_path=texture_obj_path,
+                    policy_path=policy_path,
+                    total_splats=args.total_splats,
+                    budget_per_tri=args.budget_per_tri,
+                    budgeting_policy_name=args.alloc_policy,
+                    mesh_type=args.mesh_type
+                )
             else:
                 scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         

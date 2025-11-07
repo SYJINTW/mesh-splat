@@ -19,7 +19,8 @@ from games.mesh_splatting.scene.dataset_readers import (
     readNerfSyntheticMeshInfo
 )
 from games.multi_mesh_splatting.scene.dataset_readers import (
-    readColmapMeshSceneInfo
+    readColmapMeshSceneInfo,
+    readColmapSingleMeshSceneInfo # [YC] add
 )
 from games.flame_splatting.scene.dataset_readers import (
     readNerfSyntheticFlameInfo
@@ -29,7 +30,8 @@ from games.flame_splatting.scene.dataset_readers import (
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Colmap_Mesh": readColmapMeshSceneInfo,
-    "Blender": readNerfSyntheticInfo,
+    "Colmap_Single_Mesh": readColmapSingleMeshSceneInfo, # [YC] add
+    "Blender": readNerfSyntheticInfo, 
     "Blender_Mesh": readNerfSyntheticMeshInfo,
     "Blender_FLAME": readNerfSyntheticFlameInfo
 }
