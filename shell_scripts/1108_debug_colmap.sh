@@ -5,25 +5,25 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 
 # ======= Config ======
 
 # BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # increasing order
 BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
 
-POLICIES=("uniform" "random" "area" "planarity" "distortion")
-WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
+POLICIES=( "distortion")
+WHETHER_OCCLUSION=(""  "--occlusion") # sanity check in the logfile
 
 
 ITERATION=1000
 
-EXP_NAME="1102_unbounded"
+EXP_NAME="1108_debug_colmap"
 
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/hotdog"
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
-MESH_TYPE="colmap" # "sugar" or "colmap"
-MESH_FILE="$DATASET_DIR/colmap_mesh.ply" # "mesh.obj" for sugar, "mesh.ply" for colmap
+MESH_TYPE="sugar" # "sugar" or "colmap"
+MESH_FILE="$DATASET_DIR/mesh.obj" # "mesh.obj" for sugar, "mesh.ply" for colmap
 
 
 
@@ -83,6 +83,7 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                 echo "Starting pipeline: policy=${policy}, budget=${budget}, occlusion=${occlusion_tag}"
                 echo "Running on $(hostname), on branch $(git branch --show-current)"
                 echo "Dataset: $DATASET_DIR"
+                echo "Mesh: $MESH_FILE"
                 echo "Output will be saved to: $SAVE_DIR"
                 date +"%Y-%m-%d %H:%M:%S"
                 echo "GPU cores: $CUDA_VISIBLE_DEVICES"
@@ -166,8 +167,6 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                     # Copy results JSON for plotting
                     RESULTS_JSON="${SAVE_DIR}/results_gs_mesh.json"
                     PLOT_JSON="${PLOT_DIR}/${policy}_${budget}_${occlusion_tag}.json"
-
-                    #[TODO] add jq for filtering and formatting if needed
                     if [ -f "$RESULTS_JSON" ]; then
                         cp "$RESULTS_JSON" "$PLOT_JSON"
                         echo "Results copied to: $PLOT_JSON" | tee -a "$LOG_FILE"

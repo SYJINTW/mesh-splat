@@ -42,20 +42,34 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         # rendering = render(view, gaussians, pipeline, background)["render"]
         
-        # [NOTE] ensure that during rendering we use the same rasterizer as in training
-        if occlusion:
-            rendering = render(view, gaussians, pipeline, 
-                            bg_color=None, bg_depth=None,
-                            textured_mesh=textured_mesh)["render"] # [YC] using different rasterizer
-            print("\033[92m [INFO] Render:: using occlusion-handling rasterizer for gs_mesh\033[0m")
-            
-        else: # [YC] use original diff-gaussian-rasterizer for training
+        
+        # [DONE] add pure GS renderer back here
+        if gs_type == "gs":
+            # Pure GS rendering without textured mesh
+            pure_bg_template = background
+            pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+            pure_bg = pure_bg.expand(3, view.image_height, view.image_width)
             pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
-            rendering = render(view, gaussians, pipeline, 
-                            bg_color=None, bg_depth=pure_bg_depth,
-                            textured_mesh=textured_mesh)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
-            print("\033[96m [INFO] Render:: using vanilla rasterizer for gs_mesh\033[0m")
             
+            rendering = render(view, gaussians, pipeline, 
+                            bg_color=pure_bg, bg_depth=pure_bg_depth)["render"]
+            print("\033[94m [INFO] Render::GS using pure GS rasterizer\033[0m")
+            
+        elif gs_type == "gs_mesh":
+            # [NOTE] ensure that during rendering we use the same rasterizer as in training
+            if occlusion:
+                rendering = render(view, gaussians, pipeline, 
+                                bg_color=None, bg_depth=None,
+                                textured_mesh=textured_mesh)["render"] # [YC] using different rasterizer
+                print("\033[92m [INFO] Render::DTGS using Depth+Texture+GS rasterizer for gs_mesh\033[0m")
+                
+            else: 
+                pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
+                rendering = render(view, gaussians, pipeline, 
+                                bg_color=None, bg_depth=pure_bg_depth,
+                                textured_mesh=textured_mesh)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
+                print("\033[96m [INFO] Render::TGS using Texture+GS rasterizer for gs_mesh\033[0m")
+                
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
@@ -70,6 +84,8 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
                 ):
     with torch.no_grad():
         gaussians = gaussianModelRender[gs_type](dataset.sh_degree)
+        
+        # [BUG] trace from here to see how ply and policy are loaded
         scene = Scene(dataset, gaussians, 
                       load_iteration=iteration, shuffle=False,
                       policy_path=policy_path,
@@ -82,7 +98,16 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         if hasattr(gaussians, 'prepare_scaling_rot'):
             gaussians.prepare_scaling_rot()
 
-        bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+        mesh_type = dataset.mesh_type if hasattr(dataset, 'mesh_type') else "sugar"
+        print(f"[INFO] Render:: Using mesh type: {mesh_type}")
+        
+        if mesh_type == "colmap":
+            bg_color = [0,0,0] 
+            print(f"[WARNING] Render:: overriding background color to black for colmap mesh type!")
+        else:
+            bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+            print(f"[INFO] Render:: bg:{bg_color} for mesh type: {mesh_type}")
+        
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:

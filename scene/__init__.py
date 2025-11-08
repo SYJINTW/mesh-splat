@@ -159,7 +159,7 @@ class Scene:
             print("Scene:: Loading Test Cameras from camInfos at scale ", resolution_scale)
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
-        # [YC] [NOTE] Load GS scene (ply file) for rendering
+        # [YC] [NOTE] Load trained GS scene (ply file) for rendering
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",

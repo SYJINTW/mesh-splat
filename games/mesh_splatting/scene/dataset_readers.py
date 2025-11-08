@@ -294,6 +294,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         
         tri_indices = torch.cat(tri_indices_list, dim=0)
         
+        
         pcd = MeshPointCloud(
             alpha=alpha,
             points=xyz,
@@ -306,6 +307,8 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
             triangles=triangles.cuda(),
             triangle_indices=tri_indices
         )
+        # [NOTE] should save both gs-to-tri mapping and tri-to-gs triangle_indices
+        
         print("Created MeshPointCloud with", pcd.points.shape[0], "points.")
 
         # storePly(ply_path, pcd.points, SH2RGB(shs) * 255)

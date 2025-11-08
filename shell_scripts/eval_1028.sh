@@ -128,7 +128,6 @@ for policy in "${POLICIES[@]}"; do
 
         # ======= Step 3: Copy Results JSON ======
 
-        # TODO: add jq for json clean-up & formatting
         if [ "$exp_status" = "SUCCESS" ]; then
             echo "Step 3/3: Copying results JSON for plotting..." | tee -a "$LOG_FILE"
             RESULTS_JSON="${LOAD_DIR}/results_gs_mesh.json"

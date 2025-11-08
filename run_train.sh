@@ -3,13 +3,13 @@
 # === [DEBUGGING SCRIPT] ===========================
 # This script serves as fast debugging for training with a specific scene, policy, and budget.
 set -e
-CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 
 
 
 # BUDGETS=(16384 23170 32768 46341 65536 92682 131072 185364 262144 368589 524288) # Add your budgets here
 # BUDGET=(1572865) # Add your budgets here
-UNIT_BUDGET=2.4
+UNIT_BUDGET=1.5
 
 # POLICIES=("planarity" "area" "uniform" "random") # Add your policies here
 # POLICY=("distortion") # Debugging
