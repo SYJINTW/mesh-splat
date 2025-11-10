@@ -23,12 +23,16 @@ from arguments import ModelParams, PipelineParams, get_combined_args
 from games import gaussianModelRender
 
 from pytorch3d.io import load_objs_as_meshes
+import trimesh
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import TexturesVertex
 
 def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline, background,
                 # >>>> [YC] add
                 texture_obj_path : str = None,
                 occlusion: bool = False,
-                policy_path : str = None
+                policy_path : str = None,
+                mesh_type : str = "colmap"
                 # <<<< [YC] add
                 ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_{gs_type}")
@@ -37,7 +41,38 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
     
-    textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda") # [YC] add
+    
+    # [DOING] [DONE] port loading logic from train.py to here too
+
+    # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
+    textured_mesh = None
+    if texture_obj_path != "":
+        print("[INFO] Loading textured mesh for background rendering...")
+        
+        if mesh_type == "sugar": # From SuGaR
+            assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
+            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
+             
+        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
+            assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
+            mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
+            verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
+            faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
+            colors = torch.tensor(mesh_tm.visual.vertex_colors[:, :3], dtype=torch.float32) / 255.0
+            textured_mesh = Meshes(verts=[verts], faces=[faces],
+                        textures=TexturesVertex(verts_features=[colors])).to("cuda")
+            # Combine into a textured mesh
+            textured_mesh = Meshes(
+                verts=[verts],
+                faces=[faces],
+                textures=TexturesVertex(verts_features=[colors])
+            ).to("cuda")
+        else:
+            print("[ERROR] Unknown/Unsupported mesh type!")        
+    
+    assert textured_mesh is not None, "[ERROR] Textured mesh is not loaded properly!"
+    # <<<< [YC] add
+    
     
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         # rendering = render(view, gaussians, pipeline, background)["render"]
@@ -74,7 +109,7 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
-
+# sets are {train,test, (val)}
 def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool,
                 # >>>> [YC] add
                 texture_obj_path : str = None,
@@ -113,6 +148,7 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         if not skip_train:
              render_set(gs_type, dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,
                         # >>>> [YC] add
+                        mesh_type=mesh_type,
                         texture_obj_path=texture_obj_path,
                         occlusion=occlusion,
                         policy_path=policy_path
@@ -122,6 +158,7 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         if not skip_test:
              render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,
                         # >>>> [YC] add
+                        mesh_type=mesh_type,
                         texture_obj_path=texture_obj_path,
                         occlusion=occlusion,
                         policy_path=policy_path
