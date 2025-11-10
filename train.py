@@ -102,8 +102,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     textured_mesh = load_textured_mesh(dataset, texture_obj_path)
 
 
-    # [TODO] pass the textured mesh done, to Scene, Policy, renderer and such.
-    # why pass the path when its already loaded right here?
+    # [DONE] pass the textured mesh, to Scene, Policy, renderer and such.
+    # because, why pass the path when its already loaded right here?
     # <<<< [YC] add
     
     
@@ -272,7 +272,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             print(f"[DEBUG] Training Iteration {iteration}, viewpoint: {viewpoint_cam.image_name}")
         
         
-        # [TODO] [DOING] fix hardcoded old path and handle black/white background
+        # [DONE] fix hardcoded old path and handle black/white background
         gt_image = viewpoint_cam.original_image.cuda()
          
         # -------------------------- Save debugging visualizations ------------------------- #

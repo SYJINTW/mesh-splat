@@ -15,7 +15,7 @@ BUDGET=(2000000) # arbitrary budget
 # UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("area") 
+POLICY=("distortion") # choose one from above
 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 

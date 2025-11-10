@@ -128,7 +128,8 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     
     
     
-    # [TODO] [DOING] need to clean all the mesh loading logic into one place.
+    # [TODO] clean all the mesh loading logic into one place.
+    # [DONE] a workaround to send loaded-texture-mesh to budgeting.py
     if texture_obj_path is None:
         print(f"[INFO] DatasetReader::Reading Mesh object from {path}/mesh.obj")
         mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
@@ -136,8 +137,8 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         print(f"[INFO] Reading Mesh object from {texture_obj_path}")
         mesh_scene = trimesh.load(texture_obj_path, force='mesh')
 
-    # [TODO] check connectivity here
-    # test to load with pytorch3d
+    # [TODO] check mesh connectivity here
+    # test to load with pytorch3d to see if it's trimesh's issue
 
 
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate

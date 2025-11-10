@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple 
 from types import SimpleNamespace
 from functools import partial
 
@@ -414,6 +414,7 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
         normals = normals / n_norm
 
         # [DOING] [TODO] [BUG] Investigate adjacency list construction for meshes with non-standard topology.
+        # [WORKAROUND] give the few neighbor-less faces 0 weight or something
         # There may be issues if the mesh is not watertight or has missing/incorrect face adjacency.
         # Build adjacency list from face_adjacency
         adj = [[] for _ in range(F)]
@@ -492,6 +493,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         faces_per_pixel: int = 1,
         device: str = "cuda",
         debugging: bool = True,
+        p3d_mesh: Meshes = None, 
         **kwargs
     ):
         super().__init__(mesh, **kwargs)
@@ -500,6 +502,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         self.faces_per_pixel = faces_per_pixel
         self.device = device
         self.debugging = debugging
+        self.p3d_mesh = p3d_mesh  # Store the passed-in mesh
 
         assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
 
@@ -530,6 +533,49 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print("[WARNING] DistortionMapBudgetingPolicy: No valid distortion weights, falling back to uniform")
             # Fallback to uniform is handled by base class __init__
 
+    def _load_or_create_mesh(self) -> Tuple[Meshes, torch.Tensor, torch.Tensor]:  # Use Tuple instead of tuple
+        """
+        Helper method to load textured mesh or create from trimesh.
+        
+        Returns:
+            tuple: (p3d_mesh, verts, faces) where:
+                - p3d_mesh: PyTorch3D Meshes object with textures
+                - verts: Vertex tensor [V, 3]
+                - faces: Face tensor [F, 3]
+        """
+        # If p3d_mesh was provided in __init__, use it directly
+        if self.p3d_mesh is not None:
+            print("[DEBUG] Using provided p3d_mesh")
+            return (
+                self.p3d_mesh,
+                self.p3d_mesh.verts_packed(),
+                self.p3d_mesh.faces_packed()
+            )
+        
+        # Otherwise, load from file or create from trimesh
+        if self.dataset_path:
+            mesh_path = f"{self.dataset_path}/mesh.obj"
+            if os.path.exists(mesh_path):
+                p3d_mesh = load_objs_as_meshes([mesh_path]).to(self.device)
+                print(f"[DEBUG] Loaded textured mesh from {mesh_path} using PyTorch3D load_objs_as_meshes()")
+                
+                # Extract vertices and faces WITH PyTorch3D's coordinate system transforms
+                verts = p3d_mesh.verts_packed()
+                faces = p3d_mesh.faces_packed()
+                return p3d_mesh, verts, faces
+        
+        # Fallback: create from trimesh
+        print("[DEBUG] Creating mesh from Trimesh (no textured mesh found)")
+        verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
+        faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
+        
+        # Create white textured mesh
+        verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
+        textures = TexturesVertex(verts_features=verts_rgb)
+        p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
+        
+        return p3d_mesh, verts, faces
+
     # [DONE] check the heatmap point cloud against the mesh, the coordinates should align
     def _compute_distortion_weights(self) -> np.ndarray:
         """
@@ -541,28 +587,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         print("[INFO] DistortionMapBudgetingPolicy:: Computing distortion weights...")
         
-        # Load textured mesh for rendering (do this FIRST to get correct transforms)
-        if self.dataset_path:
-            mesh_path = f"{self.dataset_path}/mesh.obj"
-            if os.path.exists(mesh_path):
-                p3d_mesh = load_objs_as_meshes([mesh_path]).to(self.device)
-                # [NOTE] this branch is taken
-                print(f"[DEBUG] Loaded textured mesh from {mesh_path} using PyTorch3D load_objs_as_meshes()")
-                
-                # Extract vertices and faces WITH PyTorch3D's coordinate system transforms
-                verts = p3d_mesh.verts_packed()
-                faces = p3d_mesh.faces_packed()
-            else:
-                print(f"[DEBUG] Textured mesh not found at {mesh_path}, using Trimesh")
-                # Fallback to manual construction
-                verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
-                faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
-                mesh_path = None
-        else:
-            print("[DEBUG] No dataset_path provided, using Trimesh mesh")
-            verts = torch.tensor(self.mesh.vertices, dtype=torch.float32, device=self.device)
-            faces = torch.tensor(self.mesh.faces, dtype=torch.int64, device=self.device)
-            mesh_path = None
+        # Load or use provided mesh
+        p3d_mesh, verts, faces = self._load_or_create_mesh()
     
         # Create mesh for rasterization (white texture for face indexing)
         # Use the SAME verts/faces as the textured mesh
@@ -570,20 +596,17 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         textures = TexturesVertex(verts_features=verts_rgb)
         tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
     
-        # If not loaded from file, construct white trimesh 3D mesh
-        if mesh_path is None:
-            p3d_mesh = tm2p3d_mesh
-    
         num_faces = faces.shape[0]
-        dist_map_all = np.zeros(num_faces, dtype=np.float32)
-        per_view_debug = [] if self.debugging else None  # collect per-view artifacts for debugging
+        dist_map_all = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
+        per_view_debug = [] if self.debugging else None # collect per-view artifacts for debugging
         
         for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
-            # Load ground truth image
-            
-        
-                
-            gt_img = viewpoint_camera.original_image  # should be in [0,1], RGB
+            # Get ground truth image on GPU
+            gt_img = viewpoint_camera.original_image  # should be [C, H, W] or [H, W, C] on GPU
+            if not isinstance(gt_img, torch.Tensor):
+                gt_img = torch.from_numpy(gt_img).to(self.device)
+            if gt_img.ndim == 3 and gt_img.shape[0] == 3:  # [C, H, W]
+                gt_img = gt_img.permute(1, 2, 0)  # -> [H, W, C]
             
             # Render textured mesh
             p3d_mesh_color, _, _ = mesh_renderer_pytorch3d(
@@ -594,15 +617,12 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 device=self.device
             )
             
-            # Convert to numpy
-            p3d_mesh_color_np = (
-                p3d_mesh_color[0, ..., :3]
-                .detach().cpu().numpy()
-            )
-            p3d_mesh_color_np = np.clip(p3d_mesh_color_np, 0.0, 1.0).astype(np.float32)
+            # Keep on GPU - no .cpu() or .numpy()
+            p3d_mesh_color_rgb = p3d_mesh_color[0, ..., :3]  # [H, W, 3]
+            p3d_mesh_color_rgb = torch.clamp(p3d_mesh_color_rgb, 0.0, 1.0)
             
-            # Compute per-pixel absolute difference map
-            dist_map = np.mean(np.abs(gt_img - p3d_mesh_color_np), axis=2)  # [H, W]
+            # Compute per-pixel absolute difference on GPU
+            dist_map = torch.mean(torch.abs(gt_img - p3d_mesh_color_rgb), dim=2)  # [H, W]
             
             # Render face indices
             _, _, tm2p3d_fragments = mesh_renderer_pytorch3d(
@@ -613,8 +633,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 device=self.device
             )
             
-            # Face index per pixel
-            face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0].cpu().numpy()  # [H, W]
+            # pixel-to-face index mapping
+            face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0]  # [H, W], on GPU
             
             # Flatten arrays
             face_idx_flat = face_idx_map.flatten()
@@ -625,37 +645,36 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             face_idx_flat = face_idx_flat[valid_mask]
             dist_flat = dist_flat[valid_mask]
             
-            # Compute sum and counts per face
-            sum_dist = np.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
-            count = np.bincount(face_idx_flat, minlength=num_faces)
+            # Use torch.bincount instead of numpy
+            sum_dist = torch.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
+            count = torch.bincount(face_idx_flat, minlength=num_faces).float()
             
-            # Avoid divide-by-zero
-            mean_dist = np.zeros(num_faces, dtype=np.float32)
+            # Compute mean distortion per face
+            mean_dist = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
             mask = count > 0
             mean_dist[mask] = sum_dist[mask] / count[mask] # [TODO] test if no averaging
             
             # Accumulate distortion across views
             dist_map_all += mean_dist
 
-            # Collect per-view debugging artifacts
+            # For debugging, only move to CPU when saving
             if per_view_debug is not None:
                 per_view_debug.append({
                     "index": idx,
                     "image_name": getattr(viewpoint_camera, "image_name", f"view_{idx}"),
-                    "render": p3d_mesh_color_np,  # RGB in [0,1]
-                    "gt": gt_img,                 # RGB in [0,1]
-                    "dist_map": dist_map,          # [H,W] in [0,1]
+                    "render": p3d_mesh_color_rgb.cpu().numpy(),
+                    "gt": gt_img.cpu().numpy(),
+                    "dist_map": dist_map.cpu().numpy(),
                     "p3d_mesh_color": p3d_mesh_color.cpu()
                 })
         
+        # Now move final result to CPU for numpy processing
+        dist_map_all_np = dist_map_all.cpu().numpy()
+        
         if self.debugging:
-            print(f"[DEBUG] Distortion weights (pre-normalization) stats - min: {dist_map_all.min():.4f}, max: {dist_map_all.max():.4f}, mean: {dist_map_all.mean():.4f}")
-            
-            # Normalize dist_map_all FIRST 
-            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
-            
-            # save distortion point cloud, heatmap, and per-view rendered mesh
-            self._save_debug_visualization(dist_map_all, per_view_debug=per_view_debug)
+            print(f"[DEBUG] Distortion weights (pre-normalization) stats - min: {dist_map_all_np.min():.4f}, max: {dist_map_all_np.max():.4f}, mean: {dist_map_all_np.mean():.4f}")
+            dist_norm = (dist_map_all_np - dist_map_all_np.min()) / (dist_map_all_np.max() - dist_map_all_np.min() + EPS)
+            self._save_debug_visualization(dist_map_all_np, per_view_debug=per_view_debug)
             
             # check mesh format and coordinate systems
             print(f"[DEBUG] p3d_mesh verts range: {p3d_mesh.verts_packed().min():.4f} to {p3d_mesh.verts_packed().max():.4f}")
@@ -668,14 +687,11 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print(f"  - Non-zero triangles: {np.count_nonzero(dist_norm)}/{num_faces}")
             print(f"  - Weight range: [{dist_norm.min():.4f}, {dist_norm.max():.4f}]")
         else:
-            # Normalize to [0, 1] and ensure positive weights (non-debugging path)
-            dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
-            
+            dist_norm = (dist_map_all_np - dist_map_all_np.min()) / (dist_map_all_np.max() - dist_map_all_np.min() + EPS)
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
         
         return np.maximum(dist_norm, EPS).astype(np.float32)
 
-   
     def _save_debug_visualization(self, dist_map_all: np.ndarray, per_view_debug=None):
         """Save distortion map debug artifacts: per-view renders, heatmaps, and colored point cloud."""
         try:
