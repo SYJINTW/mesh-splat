@@ -21,15 +21,23 @@ from games.mesh_splatting.scene.gaussian_mesh_model import GaussianMeshModel
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
+from pytorch3d.structures import Meshes
+
 
 class Scene:
 
     gaussians : GaussianModel
-
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0],
+    textured_mesh : Meshes
+    # [TODO] [major refactor] decouple the initialization/loading ordering problem, as they shouldn't be dependent on each other
+    # [DONE] use a workaround for now
+    def __init__(self, 
+                args : ModelParams, 
+                gaussians : GaussianModel, 
+                load_iteration=None, shuffle=True, resolution_scales=[1.0],
                 # >>>> [YC] add
-                texture_obj_path : str = None,
-                policy_path : str = None
+                texture_obj_path : str = None, # legacy - use textured_mesh parameter instead
+                policy_path : str = None,
+                textured_mesh = None
                 # <<<< [YC] add
                 ):
         """b
@@ -39,6 +47,7 @@ class Scene:
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
+        self.textured_mesh = textured_mesh  
 
         if load_iteration:
             if load_iteration == -1:
@@ -59,7 +68,8 @@ class Scene:
                 scene_info = sceneLoadTypeCallbacks["Colmap_Mesh"](
                     args.source_path, args.images, args.eval, args.num_splats, args.meshes
                 )
-            # [YC] add gs_mesh type
+            # [YC] add gs_mesh type single colmap mesh
+            # Real world scene (indoor/outdoor) uses this loader
             elif args.gs_type == "gs_mesh":
                 scene_info = sceneLoadTypeCallbacks["Colmap_Single_Mesh"](
                     args.source_path, args.images, args.eval, args.num_splats[0], 
@@ -68,7 +78,9 @@ class Scene:
                     total_splats=args.total_splats,
                     budget_per_tri=args.budget_per_tri,
                     budgeting_policy_name=args.alloc_policy,
-                    mesh_type=args.mesh_type
+                    mesh_type=args.mesh_type,
+                    textured_mesh = textured_mesh
+                    
                 )
             else:
                 scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
@@ -79,9 +91,8 @@ class Scene:
                 
                 print("Found transforms_train.json file, assuming Blender_Mesh dataset!")
                 
-                # Our main experiments use this path
-                # the budgeting policy and texture obj path are passed to the dataset reader
                 
+                # Synthetic scene uses this loader
                 scene_info = sceneLoadTypeCallbacks["Blender_Mesh"](
                     args.source_path, args.white_background, args.eval, args.num_splats[0],
                     # >>>> [YC] add
@@ -92,7 +103,8 @@ class Scene:
                     total_splats=args.total_splats,
                     budget_per_tri=args.budget_per_tri,
                     budgeting_policy_name=args.alloc_policy,
-                    mesh_type=args.mesh_type
+                    mesh_type=args.mesh_type,
+                    textured_mesh = textured_mesh
                     # <<<< [Sam] add
                 )
             elif args.gs_type == "gs_flame":

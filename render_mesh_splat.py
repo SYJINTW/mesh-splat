@@ -26,13 +26,16 @@ from pytorch3d.io import load_objs_as_meshes
 import trimesh
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import TexturesVertex
+from train import load_textured_mesh
+
 
 def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline, background,
                 # >>>> [YC] add
                 texture_obj_path : str = None,
                 occlusion: bool = False,
                 policy_path : str = None,
-                mesh_type : str = "colmap"
+                mesh_type : str = "colmap",
+                textured_mesh = None
                 # <<<< [YC] add
                 ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_{gs_type}")
@@ -42,36 +45,8 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     makedirs(gts_path, exist_ok=True)
     
     
-    # [DOING] [DONE] port loading logic from train.py to here too
+    #  [DONE] port loading logic from train.py to here too
 
-    # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
-    textured_mesh = None
-    if texture_obj_path != "":
-        print("[INFO] Loading textured mesh for background rendering...")
-        
-        if mesh_type == "sugar": # From SuGaR
-            assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
-            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
-             
-        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
-            assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
-            mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
-            verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
-            faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
-            colors = torch.tensor(mesh_tm.visual.vertex_colors[:, :3], dtype=torch.float32) / 255.0
-            textured_mesh = Meshes(verts=[verts], faces=[faces],
-                        textures=TexturesVertex(verts_features=[colors])).to("cuda")
-            # Combine into a textured mesh
-            textured_mesh = Meshes(
-                verts=[verts],
-                faces=[faces],
-                textures=TexturesVertex(verts_features=[colors])
-            ).to("cuda")
-        else:
-            print("[ERROR] Unknown/Unsupported mesh type!")        
-    
-    assert textured_mesh is not None, "[ERROR] Textured mesh is not loaded properly!"
-    # <<<< [YC] add
     
     
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
@@ -119,12 +94,14 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
                 ):
     with torch.no_grad():
         gaussians = gaussianModelRender[gs_type](dataset.sh_degree)
+        textured_mesh = load_textured_mesh(dataset=dataset, texture_obj_path=texture_obj_path)
         
         # [BUG] trace from here to see how ply and policy are loaded
         scene = Scene(dataset, gaussians, 
                       load_iteration=iteration, shuffle=False,
                       policy_path=policy_path,
-                      texture_obj_path=texture_obj_path
+                      texture_obj_path=texture_obj_path,
+                      textured_mesh=textured_mesh
                       )
         if hasattr(gaussians, 'update_alpha'):
             gaussians.update_alpha()
@@ -136,34 +113,34 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         mesh_type = dataset.mesh_type if hasattr(dataset, 'mesh_type') else "sugar"
         print(f"[INFO] Render:: Using mesh type: {mesh_type}")
         
-        if mesh_type == "colmap":
-            bg_color = [0,0,0] 
-            print(f"[WARNING] Render:: overriding background color to black for colmap mesh type!")
-        else:
-            bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-            print(f"[INFO] Render:: bg:{bg_color} for mesh type: {mesh_type}")
+        # if mesh_type == "colmap":
+        #     bg_color = [0,0,0] 
+        #     print(f"[WARNING] Render:: overriding background color to black for colmap mesh type!")
+        # else:
+        #     print(f"[INFO] Render:: bg:{bg_color} for mesh type: {mesh_type}")
         
+        
+        bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
+        # Add new params here
+        render_kwargs = {
+            'mesh_type': mesh_type,
+            'texture_obj_path': texture_obj_path,
+            'occlusion': occlusion,
+            'policy_path': policy_path,
+            'textured_mesh': scene.textured_mesh
+        }
+
         if not skip_train:
-             render_set(gs_type, dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,
-                        # >>>> [YC] add
-                        mesh_type=mesh_type,
-                        texture_obj_path=texture_obj_path,
-                        occlusion=occlusion,
-                        policy_path=policy_path
-                        # <<<< [YC] add
-                        )
+            render_set(gs_type, dataset.model_path, "train", scene.loaded_iter, 
+                  scene.getTrainCameras(), gaussians, pipeline, background,
+                  **render_kwargs)
 
         if not skip_test:
-             render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,
-                        # >>>> [YC] add
-                        mesh_type=mesh_type,
-                        texture_obj_path=texture_obj_path,
-                        occlusion=occlusion,
-                        policy_path=policy_path
-                        # <<<< [YC] add
-                        )
+            render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, 
+                  scene.getTestCameras(), gaussians, pipeline, background,
+                  **render_kwargs)
 
 if __name__ == "__main__":
     # Set up command line argument parser

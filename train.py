@@ -99,38 +99,19 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     print("[INFO] Training() policy_path:", policy_path)
         
     # >>>> [YC] add: if there is textured mesh, load it here (before training loop)
-    textured_mesh = None
-    mesh_type = dataset.mesh_type
-    if texture_obj_path != "":
-        print("[INFO] Loading textured mesh for background rendering...")
-        
-        if mesh_type == "sugar": # From SuGaR
-            assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
-            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
-             
-        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
-            assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
-            mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
-            verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
-            faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
-            colors = torch.tensor(mesh_tm.visual.vertex_colors[:, :3], dtype=torch.float32) / 255.0
-            textured_mesh = Meshes(verts=[verts], faces=[faces],
-                        textures=TexturesVertex(verts_features=[colors])).to("cuda")
-            # Combine into a textured mesh
-            textured_mesh = Meshes(
-                verts=[verts],
-                faces=[faces],
-                textures=TexturesVertex(verts_features=[colors])
-            ).to("cuda")
-        else:
-            print("[ERROR] Unknown/Unsupported mesh type!")        
-    
-    assert textured_mesh is not None, "[ERROR] Textured mesh is not loaded properly!"
+    textured_mesh = load_textured_mesh(dataset, texture_obj_path)
+
+
+    # [TODO] pass the textured mesh done, to Scene, Policy, renderer and such.
+    # why pass the path when its already loaded right here?
     # <<<< [YC] add
     
     
     #! [YC] note: main changing point is here
-    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path)
+    
+    print("[DEBUG] going into Scene initialization...")
+    
+    scene = Scene(dataset, gaussians, policy_path=policy_path, texture_obj_path=texture_obj_path, textured_mesh=textured_mesh)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -142,25 +123,25 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         check_path.mkdir(parents=True, exist_ok=True)
     
     
-    # [NOTE] workaround
-    # warmup(scene.getTrainCameras().copy(), textured_mesh)
-      
+    # [NOTE] early exit for warmup-only stage     
     if dataset.warmup_only:
         print("[INFO] Only run warmup stage, exiting...")
         exit()
     
     
     print("[INFO] Finished Warm-Up, Start Training..." )
+    #  ------------------------Warm Up Done--------------------------- #
     
-    # Not sure why need to get background in this part
+    
+    # [NOTE] Not sure why need to get background in this part
     # --------------------------- Load background image -------------------------- #
     background_image_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/r_0.png"
     img = Image.open(background_image_path).convert("RGB")
     # viewpoint_camera_height = 800
     # viewpoint_camera_width = 800
-    viewpoint_camera_height = 3286
-    viewpoint_camera_width = 4946
-    img = img.resize((viewpoint_camera_height, viewpoint_camera_width), Image.BILINEAR)
+    viewpoint_camera_height = scene.getTrainCameras()[0].image_height
+    viewpoint_camera_width = scene.getTrainCameras()[0].image_width
+    img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # fixed issue, should be (W, H)
     transform = T.Compose([
         T.ToTensor(),  # [0, 255] → [0.0, 1.0], shape (3, H, W)
     ])
@@ -231,6 +212,9 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         ])
         
         # ------------------------------ Mesh background ----------------------------- #
+        
+        # [TODO] fix hardcoded old gt path
+        
         bg = None
         # if textured_mesh is None:
         #     # print("Loading precaptured background for rendering...")
@@ -267,13 +251,13 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             if occlusion: # [YC] use occlusion diff-gaussian-rasterizer for training
                 render_pkg = render(viewpoint_cam, gaussians, pipe, 
                                     bg_color=bg, bg_depth=bg_depth,
-                                    textured_mesh=textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
+                                    textured_mesh=scene.textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
                 print("[INFO] DTGS training:: using Depth+Texture+GS rasterizer for gs_mesh")
                 
             else: # [YC] use original diff-gaussian-rasterizer for training
                 render_pkg = render(viewpoint_cam, gaussians, pipe, 
                                     bg_color=bg, bg_depth=pure_bg_depth,
-                                    textured_mesh=textured_mesh) # [YC] no occlusion handling, always use pure bg and pure depth
+                                    textured_mesh=scene.textured_mesh) # [YC] no occlusion handling, always use pure bg and pure depth
                 print("[INFO] TGS training:: using Texture+GS rasterizer for gs_mesh")
                 
                 
@@ -283,8 +267,15 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
         # -------------------------- Load ground truth image ------------------------- #
+        
+        if iteration % debug_freq == 0:
+            print(f"[DEBUG] Training Iteration {iteration}, viewpoint: {viewpoint_cam.image_name}")
+        
+        
+        # [TODO] [DOING] fix hardcoded old path and handle black/white background
         gt_image = viewpoint_cam.original_image.cuda()
-
+         
+        # -------------------------- Save debugging visualizations ------------------------- #
         if debugging:
             # ------------------- Change Tensor to PIL.Image for saving ------------------ #
             if iteration % debug_freq == 0:
@@ -308,7 +299,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                     # [1, 1, 1]
                     render_mesh_with_depth = render(viewpoint_cam, gaussians, pipe, 
                                                     bg_color=bg, bg_depth=bg_depth,
-                                                    textured_mesh=textured_mesh)
+                                                    textured_mesh=scene.textured_mesh)
                     _image = render_mesh_with_depth["render"]
 
                     img_to_save = _image.detach().clamp(0, 1).cpu()
@@ -319,7 +310,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                     # [0, 1, 1]
                     render_mesh_wo_depth = render(viewpoint_cam, gaussians, pipe, 
                                                     bg_color=bg, bg_depth=pure_bg_depth,
-                                                    textured_mesh=textured_mesh)
+                                                    textured_mesh=scene.textured_mesh)
                     _image = render_mesh_wo_depth["render"]
 
                     img_to_save = _image.detach().clamp(0, 1).cpu()
@@ -330,7 +321,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                     # [1, 0, 1]
                     render_pure_with_depth = render(viewpoint_cam, gaussians, pipe, 
                                                     bg_color=pure_bg, bg_depth=bg_depth,
-                                                    textured_mesh=textured_mesh)
+                                                    textured_mesh=scene.textured_mesh)
                     _image = render_pure_with_depth["render"]
                     
                     img_to_save = _image.detach().clamp(0, 1).cpu()
@@ -413,6 +404,54 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             gaussians.update_alpha()
         if hasattr(gaussians, 'prepare_scaling_rot'):
             gaussians.prepare_scaling_rot()
+
+def load_textured_mesh(dataset, texture_obj_path: str) -> Meshes:
+    """
+    Load a textured 3D mesh from the given path for background rendering.
+    
+    This function loads mesh of SuGaR (.obj) or Colmap (.ply) format (or others, add if needed)
+    and converts it to a PyTorch3D Meshes object on CUDA
+    
+    Args:
+        dataset: Dataset configuration containing mesh_type attribute.
+                Should have mesh_type in ['sugar', 'colmap', ...].
+        texture_obj_path: Path to the mesh file. If empty string, raises AssertionError.
+    Returns:
+        Meshes: A PyTorch3D Meshes object on CUDA
+    Raises:
+        AssertionError: If texture_obj_path is empty or mesh type is unsupported.
+        AssertionError: If file extension doesn't match expected format.
+    """
+    
+    assert texture_obj_path != "", "[ERROR] texture_obj_path cannot be empty"
+    textured_mesh = None
+    mesh_type = dataset.mesh_type
+    if texture_obj_path != "":
+        print("[INFO] Loading textured mesh for background rendering...")
+        
+        if mesh_type == "sugar": # From SuGaR
+            assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
+            textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
+             
+        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
+            assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
+            mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
+            verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
+            faces = torch.tensor(mesh_tm.faces, dtype=torch.int64)
+            colors = torch.tensor(mesh_tm.visual.vertex_colors[:, :3], dtype=torch.float32) / 255.0
+            
+            # Combine into a textured mesh
+            textured_mesh = Meshes(
+                verts=[verts],
+                faces=[faces],
+                textures=TexturesVertex(verts_features=[colors])
+            ).to("cuda")
+        else:
+            print("[ERROR] Unknown/Unsupported mesh type!")        
+            
+    assert textured_mesh is not None, "[ERROR] Textured mesh is not loaded properly!"
+    
+    return textured_mesh
 
 
 def prepare_output_and_logger(args):

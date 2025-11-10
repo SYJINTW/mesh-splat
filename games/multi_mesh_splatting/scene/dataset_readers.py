@@ -18,7 +18,6 @@ import torch
 import time
 
 # >>>> [YC] add
-from pathlib import Path
 from games.mesh_splatting.scene.dataset_readers \
     import get_num_splats_per_triangle, transform_vertices_function
 from games.mesh_splatting.utils.graphics_utils import MeshPointCloud
@@ -137,6 +136,7 @@ def readColmapSingleMeshSceneInfo(
         min_splats_per_tri: int = 0,
         max_splats_per_tri: int = 8,
         mesh_type: str = "sugar",
+        textured_mesh = None,
         # <<< [YC] add
         llffhold=8):
     
@@ -157,7 +157,7 @@ def readColmapSingleMeshSceneInfo(
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
     
     sort_start = time.time()
-    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name) # [NOTE] bottleneck?
+    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name) 
     sort_end = time.time()
     print(f"[PROFILE] Camera sorting took {sort_end - sort_start:.4f} seconds for {len(cam_infos_unsorted)} cameras")
 
@@ -239,6 +239,8 @@ def readColmapSingleMeshSceneInfo(
             budgeting_policy_name=budgeting_policy_name,
             min_splats_per_tri=min_splats_per_tri,
             max_splats_per_tri=max_splats_per_tri,
+            textured_mesh=textured_mesh
+            
         )
         # <<<< [SAM] Budgeting policy integration
         

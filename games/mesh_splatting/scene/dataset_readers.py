@@ -50,6 +50,7 @@ def get_num_splats_per_triangle(
     budgeting_policy_name: str = "uniform",
     min_splats_per_tri: int = 0, # [NOTE] could be adjusted
     max_splats_per_tri: int = 8,
+    textured_mesh = None
 )-> np.ndarray: # [N,], number of splats on each triangle
     
     # define allocation_path only when policy_path provided
@@ -71,6 +72,7 @@ def get_num_splats_per_triangle(
             mesh=mesh_scene,
             viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
             dataset_path=path,
+            p3d_mesh=textured_mesh
         )
         num_splats_per_triangle = budgeting_policy.allocate(
             total_splats=total_splats,
@@ -98,7 +100,7 @@ def get_num_splats_per_triangle(
     # Fallback: uniform distribution using num_splats
     else:
         num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-        print(f"[INFO] Scene::Reader() Fallback using uniform distribution: {num_splats} splats per triangle")
+        print(f"[WARNING] Scene::Reader() Fallback using uniform distribution: {num_splats} splats per triangle")
 
     return num_splats_per_triangle
 
@@ -116,6 +118,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         min_splats_per_tri: int = 0,
         max_splats_per_tri: int = 8,
         mesh_type: str = "sugar",
+        textured_mesh = None
         # <<<< [SAM] add
 ) -> SceneInfo:
     print("Reading Training Transforms")
@@ -123,6 +126,9 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     print("Reading Test Transforms")
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
     
+    
+    
+    # [TODO] [DOING] need to clean all the mesh loading logic into one place.
     if texture_obj_path is None:
         print(f"[INFO] DatasetReader::Reading Mesh object from {path}/mesh.obj")
         mesh_scene = trimesh.load(f'{path}/mesh.obj', force='mesh')
@@ -206,6 +212,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
             budgeting_policy_name=budgeting_policy_name,
             min_splats_per_tri=min_splats_per_tri,
             max_splats_per_tri=max_splats_per_tri,
+            textured_mesh=textured_mesh
         )
         # <<<< [SAM] Budgeting policy integration
         
@@ -254,7 +261,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
         color_list = []
         tri_indices_list = []
         
-        # >>>> [SAM] Build point-to-triangle mapping
+        # [TODO] Build point-to-triangle mapping & triangle-to-point mapping
         for i in range(triangles.shape[0]):
             n = num_splats_per_triangle[i]
             if n == 0:
@@ -274,7 +281,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
             alpha_list.append(alpha)
             color_list.append(color)
             tri_indices_list.append(torch.full((n,), i, dtype=torch.long))
-        # <<<< [SAM]
+
         
         xyz = torch.cat(xyz_list, dim=0)
         xyz = xyz.reshape(num_pts, 3)

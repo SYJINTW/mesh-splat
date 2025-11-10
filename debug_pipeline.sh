@@ -10,12 +10,12 @@
 # === [CONFIGS] ===========================
 export CUDA_VISIBLE_DEVICES=2
 
-BUDGET=(1572865) # arbitrary budget 
+BUDGET=(2000000) # arbitrary budget 
 # BUDGET=(131072) # arbitrary budget 
 # UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("random") 
+POLICY=("area") 
 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
@@ -31,7 +31,7 @@ RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
-SAVE_DIR="output/${DATE_TODAY}/Debug_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
+SAVE_DIR="output/${DATE_TODAY}/DEBUG_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
 POLICY_CACHED="${SAVE_DIR}/${POLICY}_${BUDGET}.npy"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 
