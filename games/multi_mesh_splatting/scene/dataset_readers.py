@@ -15,10 +15,12 @@ import os
 import numpy as np
 import trimesh
 import torch
+import time
 
 # >>>> [YC] add
 from pathlib import Path
-from scene.budgeting import get_budgeting_policy
+from games.mesh_splatting.scene.dataset_readers \
+    import get_num_splats_per_triangle, transform_vertices_function
 from games.mesh_splatting.utils.graphics_utils import MeshPointCloud
 # <<< [YC] add
 
@@ -41,77 +43,6 @@ from scene.colmap_loader import (
 
 from scene.dataset_readers import readColmapCameras
 
-# >>>> [YC] add: function to transform vertices
-def transform_vertices_function(vertices, c=1):
-    vertices = vertices[:, [0, 2, 1]]
-    vertices[:, 1] = -vertices[:, 1]
-    vertices *= c
-    return vertices
-
-def get_num_splats_per_triangle(
-    triangles, # [N,3,3]
-    mesh_scene,
-    train_cam_infos,
-    path,
-    num_splats,
-    policy_path: str = None,
-    total_splats: int = None,
-    budgeting_policy_name: str = "uniform",
-    min_splats_per_tri: int = 0, # [NOTE] could be adjusted
-    max_splats_per_tri: int = 8,
-)-> np.ndarray: # [N,], number of splats on each triangle
-    
-    # define allocation_path only when policy_path provided
-    allocation_path = Path(policy_path) if policy_path else None
-
-    # load num_splats allocation policy from pre-computed file
-    if allocation_path is not None and allocation_path.exists():
-        print(f"[INFO] Loading splat allocation from: {allocation_path}")
-        num_splats_per_triangle = np.load(allocation_path)
-        print("[INFO] loaded distribution, max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
-            
-    # Use budgeting policy, computing on-the-fly
-    elif total_splats is not None:
-        print(f"[INFO] no pre-computed policy found")
-        print(f"[INFO] Scene::Reader() Using budgeting policy: {budgeting_policy_name}")
-
-        budgeting_policy = get_budgeting_policy(
-            budgeting_policy_name,
-            mesh=mesh_scene,
-            viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
-            dataset_path=path,
-        )
-        num_splats_per_triangle = budgeting_policy.allocate(
-            total_splats=total_splats,
-        )
-
-        # num_splats_per_triangle = budgeting_policy.allocate_bounded(
-        #     triangles=triangles,
-        #     total_splats=total_splats,
-        #     min_per_tri=min_splats_per_tri,
-        #     max_per_tri=max_splats_per_tri,
-        # )
-
-        print(f"[INFO] Scene::Reader() Requested total splats: {total_splats}")
-        print(f"[INFO] Scene::Reader() Allocated total splats: {num_splats_per_triangle.sum()}")
-        print(f"[INFO] Scene::Reader() Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
-        print(f"[INFO] Scene::Reader() Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
-
-        # save under {dataset_path}/policy/{}.npy
-        allocation_save_path = Path(path) / f"policy/{budgeting_policy_name}_{total_splats}.npy"
-        allocation_save_path.parent.mkdir(parents=True, exist_ok=True)
-        assert allocation_save_path.parent.exists(), "Directory does not exist, please create it first!"
-        print(f"[INFO] Scene::Reader() Saving allocation policy file to: {allocation_save_path}")
-        np.save(allocation_save_path, num_splats_per_triangle)
-
-    # Fallback: uniform distribution using num_splats
-    else:
-        num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
-        print(f"[INFO] Scene::Reader() Fallback using uniform distribution: {num_splats} splats per triangle")
-
-    return num_splats_per_triangle
-
-# <<<< [YC] add
 
 def readColmapMeshSceneInfo(path, images, eval, num_splats, meshes, llffhold=8):
     try:
@@ -224,11 +155,16 @@ def readColmapSingleMeshSceneInfo(
 
     reading_dir = "images" if images == None else images
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
-    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
+    
+    sort_start = time.time()
+    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name) # [NOTE] bottleneck?
+    sort_end = time.time()
+    print(f"[PROFILE] Camera sorting took {sort_end - sort_start:.4f} seconds for {len(cam_infos_unsorted)} cameras")
 
     if eval:
         train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
         test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold == 0]
+        print(f"[INFO] DatasetReader::Colmap scene dataset caminfos: using {len(train_cam_infos)} training views and {len(test_cam_infos)} test views.")
     else:
         train_cam_infos = cam_infos
         test_cam_infos = []
