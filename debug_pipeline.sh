@@ -15,7 +15,7 @@ BUDGET=(1572865) # arbitrary budget
 # UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("distortion") 
+POLICY=("random") 
 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
@@ -32,6 +32,7 @@ IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white backgrou
 
 DATE_TODAY=$(date +"%m%d")
 SAVE_DIR="output/${DATE_TODAY}/Debug_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
+POLICY_CACHED="${SAVE_DIR}/${POLICY}_${BUDGET}.npy"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 
 # === [MAIN SCRIPT] ===========================
@@ -67,9 +68,10 @@ echo > "$LOG_FILE" # clear log file
     --total_splats "$BUDGET"\
     --alloc_policy "$POLICY" \
     --gs_type gs_mesh \
+    --policy_path "$POLICY_CACHED" \
     $IS_WHITE_BG \
-    --iteration 10 \
-    "$RESOLUTION"
+    $RESOLUTION \
+    --iteration 10 
 
 
 
@@ -89,11 +91,11 @@ echo > "$LOG_FILE" # clear log file
     --occlusion \
     --total_splats "$BUDGET"\
     --alloc_policy "$POLICY" \
-    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" \
+    --policy_path "$POLICY_CACHED" \
     --gs_type gs_mesh \
     $IS_WHITE_BG \
-    --iteration 10 \
-    "$RESOLUTION"
+    $RESOLUTION \
+    --iteration 10
 
 
 
@@ -114,8 +116,9 @@ python render_mesh_splat.py \
     --alloc_policy "$POLICY" \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
-    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" \
-    "$RESOLUTION"
+    $RESOLUTION \
+    $IS_WHITE_BG \
+    --policy_path "$POLICY_CACHED" \
 
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"

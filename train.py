@@ -76,50 +76,10 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 
-# [TODO] 
+# [TODO] loss-informed stop criteria
 LOSS_CONVG_THRESH = 0.01
 
 
-def load_with_white_bg(path):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  
-    # keep alpha if present
-    # shape: [H,W,3] or [H,W,4]
-
-    if img.shape[2] == 4:  # RGBA
-        rgb = img[:, :, :3].astype(np.float32) / 255.0
-        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
-        white_bg = np.ones_like(rgb)
-        img_out = rgb * alpha + white_bg * (1 - alpha)
-    else:
-        img_out = img[:, :, :3].astype(np.float32) / 255.0
-
-    # Convert BGR to RGB because OpenCV loads in BGR order
-    img_out = img_out[:, :, ::-1]
-    return img_out
-
-def load_image_with_background_compositing(path, image_height=800, image_width=800, white_background=True):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
-    # shape: [H,W,3] or [H,W,4]
-
-    # Resize if dimensions don't match
-    if img.shape[0] != image_height or img.shape[1] != image_width:
-        img = cv2.resize(img, (image_width, image_height), interpolation=cv2.INTER_LINEAR)
-
-    if img.shape[2] == 4:  # RGBA
-        rgb = img[:, :, :3].astype(np.float32) / 255.0
-        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
-        
-        # Choose background based on flag, black or white
-        bg_color = 1.0 if white_background else 0.0
-        bg = np.full_like(rgb, bg_color)
-        
-        img_out = rgb * alpha + bg * (1 - alpha)
-    else:
-        img_out = img[:, :, :3].astype(np.float32) / 255.0
-
-    # Convert BGR to RGB because OpenCV loads in BGR order
-    img_out = img_out[:, :, ::-1]
-    return img_out
    
 def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,
             debug_from, save_xyz,
@@ -521,6 +481,49 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         torch.cuda.empty_cache()
 
 
+def load_with_white_bg(path):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  
+    # keep alpha if present
+    # shape: [H,W,3] or [H,W,4]
+
+    if img.shape[2] == 4:  # RGBA
+        rgb = img[:, :, :3].astype(np.float32) / 255.0
+        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
+        white_bg = np.ones_like(rgb)
+        img_out = rgb * alpha + white_bg * (1 - alpha)
+    else:
+        img_out = img[:, :, :3].astype(np.float32) / 255.0
+
+    # Convert BGR to RGB because OpenCV loads in BGR order
+    img_out = img_out[:, :, ::-1]
+    return img_out
+
+def load_image_with_background_compositing(path, image_height=800, image_width=800, white_background=True):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
+    # shape: [H,W,3] or [H,W,4]
+
+    # Resize if dimensions don't match
+    if img.shape[0] != image_height or img.shape[1] != image_width:
+        img = cv2.resize(img, (image_width, image_height), interpolation=cv2.INTER_LINEAR)
+
+    if img.shape[2] == 4:  # RGBA
+        rgb = img[:, :, :3].astype(np.float32) / 255.0
+        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
+        
+        # Choose background based on flag, black or white
+        bg_color = 1.0 if white_background else 0.0
+        bg = np.full_like(rgb, bg_color)
+        
+        img_out = rgb * alpha + bg * (1 - alpha)
+    else:
+        img_out = img[:, :, :3].astype(np.float32) / 255.0
+
+    # Convert BGR to RGB because OpenCV loads in BGR order
+    img_out = img_out[:, :, ::-1]
+    return img_out
+
+
+
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
@@ -559,7 +562,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_only", action='store_true', help="only run warmup stage and exit, no entering training loop")
     parser.add_argument('--mesh_type', type=str, default="sugar", help="textured mesh type: sugar, colmap, or others")
     
-    lp = ModelParams(parser)
+    lp = ModelParams(parser) # LoadingParams
     args, _ = parser.parse_known_args(sys.argv[1:])
     lp.num_splats = args.num_splats
     lp.meshes = args.meshes

@@ -32,6 +32,6 @@ sceneLoadTypeCallbacks = {
     "Colmap_Mesh": readColmapMeshSceneInfo,
     "Colmap_Single_Mesh": readColmapSingleMeshSceneInfo, # [YC] add
     "Blender": readNerfSyntheticInfo, 
-    "Blender_Mesh": readNerfSyntheticMeshInfo,
+    "Blender_Mesh": readNerfSyntheticMeshInfo, # [YC] add
     "Blender_FLAME": readNerfSyntheticFlameInfo
 }
