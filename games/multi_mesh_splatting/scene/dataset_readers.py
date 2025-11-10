@@ -228,6 +228,9 @@ def readColmapSingleMeshSceneInfo(
             print(f"[INFO] total_splats provided: {total_splats} splats")
         
         # >>>> [SAM] Budgeting policy integration
+        print(f"[INFO] Starting distortion weight computation for {len(train_cam_infos)} cameras...")
+        t0 = time.time()
+        
         num_splats_per_triangle = get_num_splats_per_triangle(
             triangles=triangles,
             mesh_scene=mesh_scene,
@@ -242,6 +245,7 @@ def readColmapSingleMeshSceneInfo(
             textured_mesh=textured_mesh
             
         )
+        print(f"[PROFILE] Distortion computation took {time.time()-t0:.2f}s")
         # <<<< [SAM] Budgeting policy integration
         
         # Since this data set has no colmap data, we start with random points sampled on the mesh surface

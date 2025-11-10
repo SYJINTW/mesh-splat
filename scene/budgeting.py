@@ -3,6 +3,7 @@ from collections import deque
 from typing import Dict, Optional, Tuple 
 from types import SimpleNamespace
 from functools import partial
+from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -514,14 +515,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             self.viewpoint_camera_infos, resolution_scale=1.0, 
             args=args
         )
-        # [DOING] [BUG] will break if the cameras are from a COLMAP dataset
-        # error: CUDA OOM, but why?
-        ## camera original images are too large?
-        
         assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
-
-        self.image_height = self.viewpoint_cameras[0].image_height # resolution of all cameras should be the same
-        self.image_width = self.viewpoint_cameras[0].image_width
 
         # Compute distortion weights and assign to self.weights
         distortion_weights = self._compute_distortion_weights()
@@ -546,6 +540,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         # If p3d_mesh was provided in __init__, use it directly
         if self.p3d_mesh is not None:
             print("[DEBUG] Using provided p3d_mesh")
+            
+            assert isinstance(self.p3d_mesh, Meshes), "[ERROR] Provided p3d_mesh is not a PyTorch3D Meshes object"
             return (
                 self.p3d_mesh,
                 self.p3d_mesh.verts_packed(),
@@ -580,6 +576,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
     def _compute_distortion_weights(self) -> np.ndarray:
         """
         Compute per-triangle distortion weights by rendering from all viewpoints.
+        Uses batched rendering for efficiency.
         """
         if self.mesh is None or self.viewpoint_cameras is None:
             print("[WARNING] DistortionMapBudgetingPolicy: Missing mesh or cameras")
@@ -589,91 +586,121 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         
         # Load or use provided mesh
         p3d_mesh, verts, faces = self._load_or_create_mesh()
-    
+
         # Create mesh for rasterization (white texture for face indexing)
-        # Use the SAME verts/faces as the textured mesh
         verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
         textures = TexturesVertex(verts_features=verts_rgb)
         tm2p3d_mesh = Meshes(verts=[verts], faces=[faces], textures=textures)
-    
+
         num_faces = faces.shape[0]
         dist_map_all = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
-        per_view_debug = [] if self.debugging else None # collect per-view artifacts for debugging
+        per_view_debug = [] if self.debugging else None
         
-        for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
-            # Get ground truth image on GPU
-            gt_img = viewpoint_camera.original_image  # should be [C, H, W] or [H, W, C] on GPU
-            if not isinstance(gt_img, torch.Tensor):
-                gt_img = torch.from_numpy(gt_img).to(self.device)
-            if gt_img.ndim == 3 and gt_img.shape[0] == 3:  # [C, H, W]
-                gt_img = gt_img.permute(1, 2, 0)  # -> [H, W, C]
+        
+        # [TODO] this is not really batch processing 
+        # Batch processing with tqdm
+        batch_size = 8  # Process 8 cameras at once - adjust based on GPU memory
+        num_cameras = len(self.viewpoint_cameras)
+        num_batches = (num_cameras + batch_size - 1) // batch_size
+        
+        print(f"[INFO] Processing {num_cameras} cameras in {num_batches} batches of {batch_size}")
+        
+        # Create progress bar for batches
+        batch_pbar = tqdm(
+            range(0, num_cameras, batch_size),
+            desc="Processing camera batches",
+            total=num_batches,
+            unit="batch",
+            ncols=100
+        )
+        
+        for batch_start in batch_pbar:
+            batch_end = min(batch_start + batch_size, num_cameras)
+            batch_cameras = self.viewpoint_cameras[batch_start:batch_end]
+            actual_batch_size = len(batch_cameras)
             
-            # Render textured mesh
-            p3d_mesh_color, _, _ = mesh_renderer_pytorch3d(
-                viewpoint_camera, p3d_mesh,
-                image_height=self.image_height,
-                image_width=self.image_width,
-                faces_per_pixel=self.faces_per_pixel,
-                device=self.device
+            # Update progress bar description
+            batch_pbar.set_description(
+                f"Batch {batch_start//batch_size + 1}/{num_batches} "
+                f"(cams {batch_start}-{batch_end-1})"
             )
             
-            # Keep on GPU - no .cpu() or .numpy()
-            p3d_mesh_color_rgb = p3d_mesh_color[0, ..., :3]  # [H, W, 3]
-            p3d_mesh_color_rgb = torch.clamp(p3d_mesh_color_rgb, 0.0, 1.0)
-            
-            # Compute per-pixel absolute difference on GPU
-            dist_map = torch.mean(torch.abs(gt_img - p3d_mesh_color_rgb), dim=2)  # [H, W]
-            
-            # Render face indices
-            _, _, tm2p3d_fragments = mesh_renderer_pytorch3d(
-                viewpoint_camera, tm2p3d_mesh,
-                image_height=self.image_height,
-                image_width=self.image_width,
-                faces_per_pixel=self.faces_per_pixel,
-                device=self.device
-            )
-            
-            # pixel-to-face index mapping
-            face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0]  # [H, W], on GPU
-            
-            # Flatten arrays
-            face_idx_flat = face_idx_map.flatten()
-            dist_flat = dist_map.flatten()
-            
-            # Filter out invalid faces (background = -1)
-            valid_mask = face_idx_flat >= 0
-            face_idx_flat = face_idx_flat[valid_mask]
-            dist_flat = dist_flat[valid_mask]
-            
-            # Use torch.bincount instead of numpy
-            sum_dist = torch.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
-            count = torch.bincount(face_idx_flat, minlength=num_faces).float()
-            
-            # Compute mean distortion per face
-            mean_dist = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
-            mask = count > 0
-            mean_dist[mask] = sum_dist[mask] / count[mask] # [TODO] test if no averaging
-            
-            # Accumulate distortion across views
-            dist_map_all += mean_dist
-
-            # For debugging, only move to CPU when saving
-            if per_view_debug is not None:
-                per_view_debug.append({
-                    "index": idx,
-                    "image_name": getattr(viewpoint_camera, "image_name", f"view_{idx}"),
-                    "render": p3d_mesh_color_rgb.cpu().numpy(),
-                    "gt": gt_img.cpu().numpy(),
-                    "dist_map": dist_map.cpu().numpy(),
-                    "p3d_mesh_color": p3d_mesh_color.cpu()
-                })
+            # Process each camera in the batch
+            for local_idx, viewpoint_camera in enumerate(batch_cameras):
+                idx = batch_start + local_idx
+                
+                # Get camera-specific dimensions
+                cam_height = viewpoint_camera.image_height
+                cam_width = viewpoint_camera.image_width
+                
+                # Get ground truth image - already [C, H, W] on GPU
+                gt_img = viewpoint_camera.original_image  # [C, H, W]
+                
+                # Render textured mesh
+                p3d_mesh_color_rgb, _, _ = mesh_renderer_pytorch3d(
+                    viewpoint_camera, p3d_mesh,
+                    image_height=cam_height,
+                    image_width=cam_width,
+                    faces_per_pixel=self.faces_per_pixel,
+                    device=self.device
+                )
+                
+                p3d_mesh_color_rgb = torch.clamp(p3d_mesh_color_rgb, 0.0, 1.0)
+                
+                # Compute per-pixel absolute difference - [C, H, W] format
+                dist_map = torch.mean(torch.abs(gt_img - p3d_mesh_color_rgb), dim=0)  # [H, W]
+                
+                # Render face indices
+                _, _, tm2p3d_fragments = mesh_renderer_pytorch3d(
+                    viewpoint_camera, tm2p3d_mesh,
+                    image_height=cam_height,
+                    image_width=cam_width,
+                    faces_per_pixel=self.faces_per_pixel,
+                    device=self.device
+                )
+                
+                # Pixel-to-face mapping
+                face_idx_map = tm2p3d_fragments.pix_to_face[0, ..., 0]  # [H, W]
+                
+                # Flatten and filter
+                face_idx_flat = face_idx_map.flatten()
+                dist_flat = dist_map.flatten()
+                valid_mask = face_idx_flat >= 0
+                face_idx_flat = face_idx_flat[valid_mask]
+                dist_flat = dist_flat[valid_mask]
+                
+                # Accumulate using bincount
+                sum_dist = torch.bincount(face_idx_flat, weights=dist_flat, minlength=num_faces)
+                count = torch.bincount(face_idx_flat, minlength=num_faces).float()
+                
+                mean_dist = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
+                mask = count > 0
+                mean_dist[mask] = sum_dist[mask] / count[mask]
+                
+                # Accumulate distortion
+                dist_map_all += mean_dist
+                
+                # Debug info
+                if per_view_debug is not None:
+                    per_view_debug.append({
+                        "index": idx,
+                        "image_name": getattr(viewpoint_camera, "image_name", f"view_{idx}"),
+                        "p3d_mesh_color": p3d_mesh_color_rgb.cpu(),
+                        "gt": gt_img.cpu(),
+                        "dist_map": dist_map.cpu().numpy(),
+                    })
         
-        # Now move final result to CPU for numpy processing
+            # Free memory after each batch
+            if batch_end < num_cameras:
+                torch.cuda.empty_cache()
+    
+        batch_pbar.close()
+        
+        # Move final result to CPU
         dist_map_all_np = dist_map_all.cpu().numpy()
         
         if self.debugging:
             print(f"[DEBUG] Distortion weights (pre-normalization) stats - min: {dist_map_all_np.min():.4f}, max: {dist_map_all_np.max():.4f}, mean: {dist_map_all_np.mean():.4f}")
-            dist_norm = (dist_map_all_np - dist_map_all_np.min()) / (dist_map_all_np.max() - dist_map_all_np.min() + EPS)
             self._save_debug_visualization(dist_map_all_np, per_view_debug=per_view_debug)
             
             # check mesh format and coordinate systems
@@ -682,12 +709,13 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             print(f"[DEBUG] Verts match: {torch.allclose(p3d_mesh.verts_packed(), tm2p3d_mesh.verts_packed())}")
             print(f"[DEBUG] Faces match: {torch.equal(p3d_mesh.faces_packed(), tm2p3d_mesh.faces_packed())}")
             
-            # check weights
+            dist_norm = (dist_map_all_np - dist_map_all_np.min()) / (dist_map_all_np.max() - dist_map_all_np.min() + EPS)
             print(f"[DEBUG] Distortion weights computed:")
             print(f"  - Non-zero triangles: {np.count_nonzero(dist_norm)}/{num_faces}")
             print(f"  - Weight range: [{dist_norm.min():.4f}, {dist_norm.max():.4f}]")
         else:
             dist_norm = (dist_map_all_np - dist_map_all_np.min()) / (dist_map_all_np.max() - dist_map_all_np.min() + EPS)
+    
         assert dist_map_all.max() >= 0, "Distortion map contains negative values."
         
         return np.maximum(dist_norm, EPS).astype(np.float32)
