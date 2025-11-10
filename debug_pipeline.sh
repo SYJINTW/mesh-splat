@@ -72,10 +72,6 @@ echo > "$LOG_FILE" # clear log file
     $IS_WHITE_BG \
     $RESOLUTION \
     --iteration 10 >> "$LOG_FILE"
-
-
-
-    # --budget_per_tri "$UNIT_BUDGET" \
 } 
 
 
