@@ -16,4 +16,4 @@ ext/
 *.log
 log/
 debug*.ply
-debug*/
+*debug*/

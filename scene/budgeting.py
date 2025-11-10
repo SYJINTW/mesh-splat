@@ -489,8 +489,6 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         mesh: trimesh.Trimesh,
         viewpoint_camera_infos=None,  # pass in CamInfo, get Camera later
         dataset_path: str = None,
-        image_height: int = 800,
-        image_width: int = 800,
         faces_per_pixel: int = 1,
         device: str = "cuda",
         debugging: bool = True,
@@ -499,8 +497,6 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         super().__init__(mesh, **kwargs)
         self.viewpoint_camera_infos = viewpoint_camera_infos
         self.dataset_path = dataset_path
-        self.image_height = image_height
-        self.image_width = image_width
         self.faces_per_pixel = faces_per_pixel
         self.device = device
         self.debugging = debugging
@@ -508,7 +504,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
 
         # Build Camera objects
-        args = SimpleNamespace(resolution=1, data_device=device) # dummy args
+        args = SimpleNamespace(resolution= -1, data_device=device) # dummy args
+        
+        # this camera should be freed after use?
         self.viewpoint_cameras = cameraList_from_camInfos(
             self.viewpoint_camera_infos, resolution_scale=1.0, 
             args=args
@@ -516,7 +514,11 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         # [DOING] [BUG] will break if the cameras are from a COLMAP dataset
         # error: CUDA OOM, but why?
         ## camera original images are too large?
+        
         assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
+
+        self.image_height = self.viewpoint_cameras[0].image_height # resolution of all cameras should be the same
+        self.image_width = self.viewpoint_cameras[0].image_width
 
         # Compute distortion weights and assign to self.weights
         distortion_weights = self._compute_distortion_weights()
@@ -527,30 +529,6 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         else:
             print("[WARNING] DistortionMapBudgetingPolicy: No valid distortion weights, falling back to uniform")
             # Fallback to uniform is handled by base class __init__
-
-    def _load_with_white_bg(self, path):
-        """Load image with white background compositing."""
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-        
-        if img is None:
-            raise FileNotFoundError(f"Could not load image: {path}")
-
-        if len(img.shape) == 2:
-            # Grayscale
-            img_out = img.astype(np.float32) / 255.0
-            img_out = np.stack([img_out] * 3, axis=-1)
-        elif img.shape[2] == 4:  # RGBA
-            rgb = img[:, :, :3].astype(np.float32) / 255.0
-            alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
-            white_bg = np.ones_like(rgb)
-            img_out = rgb * alpha + white_bg * (1 - alpha)
-        else:
-            img_out = img[:, :, :3].astype(np.float32) / 255.0
-
-        # Convert BGR to RGB because OpenCV loads in BGR order
-        img_out = img_out[:, :, ::-1]
-        return img_out
-
 
     # [DONE] check the heatmap point cloud against the mesh, the coordinates should align
     def _compute_distortion_weights(self) -> np.ndarray:
@@ -603,14 +581,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
             # Load ground truth image
             
-            # [TODO] fix hardcoded old path
-            gt_image_path = f"{self.dataset_path}/mesh_texture/{viewpoint_camera.image_name}.png"
+        
                 
-            if not os.path.exists(gt_image_path):
-                print(f"[WARNING] Ground truth image not found: {gt_image_path}")
-                continue
-                
-            gt_img = self._load_with_white_bg(gt_image_path)
+            gt_img = viewpoint_camera.original_image  # should be in [0,1], RGB
             
             # Render textured mesh
             p3d_mesh_color, _, _ = mesh_renderer_pytorch3d(
@@ -659,7 +632,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             # Avoid divide-by-zero
             mean_dist = np.zeros(num_faces, dtype=np.float32)
             mask = count > 0
-            mean_dist[mask] = sum_dist[mask] / count[mask]
+            mean_dist[mask] = sum_dist[mask] / count[mask] # [TODO] test if no averaging
             
             # Accumulate distortion across views
             dist_map_all += mean_dist
@@ -676,8 +649,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 })
         
         if self.debugging:
+            print(f"[DEBUG] Distortion weights (pre-normalization) stats - min: {dist_map_all.min():.4f}, max: {dist_map_all.max():.4f}, mean: {dist_map_all.mean():.4f}")
             
-            # Normalize dist_map_all FIRST for debugging
+            # Normalize dist_map_all FIRST 
             dist_norm = (dist_map_all - dist_map_all.min()) / (dist_map_all.max() - dist_map_all.min() + EPS)
             
             # save distortion point cloud, heatmap, and per-view rendered mesh

@@ -15,7 +15,8 @@ BUDGET=(1572865) # arbitrary budget
 # UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("random") 
+POLICY=("distortion") 
+
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
 
@@ -24,7 +25,10 @@ MESH_TYPE="colmap" # "sugar" or "colmap"
 # MESH_FILE="$DATASET_DIR/colmap_mesh.ply" # "mesh.obj" for sugar, "mesh.ply" for colmap
 MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
 
-IS_WHITE_BG="" # set to "--white_background" if the dataset has white background
+
+
+RESOLUTION="" # or "--resolution 4" for faster debugging
+IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
 SAVE_DIR="output/${DATE_TODAY}/Debug_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
@@ -65,7 +69,7 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     --iteration 10 \
-    #--resolution 4
+    "$RESOLUTION"
 
 
 
@@ -89,7 +93,7 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     --iteration 10 \
-    #--resolution 4
+    "$RESOLUTION"
 
 
 
@@ -111,8 +115,7 @@ python render_mesh_splat.py \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
     --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" \
-    #--resolution 4
-
+    "$RESOLUTION"
 
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"
