@@ -1,3 +1,6 @@
+#!/bin/bash
+# set -e ; echo "set -e activated: exit on error"
+
 # === [DEBUGGING SCRIPT] ===========================
 # This script serves as fast debugging of the whole pipeline (train+render+metrics)
 # with a specific scene, policy, and budget.
@@ -5,14 +8,14 @@
 
 
 # === [CONFIGS] ===========================
-
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 
 BUDGET=(1572865) # arbitrary budget 
+# BUDGET=(131072) # arbitrary budget 
 # UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("area") 
+POLICY=("random") 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
 
@@ -24,11 +27,13 @@ MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
 IS_WHITE_BG="" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
-SAVE_DIR="output/${DATE_TODAY}/Debug_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
+SAVE_DIR="output/${DATE_TODAY}/Debug_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 
-
 # === [MAIN SCRIPT] ===========================
+
+echo > "$LOG_FILE" # clear log file
+
 
 {
     echo "================================================================="
@@ -42,7 +47,30 @@ LOG_FILE="pipeline-${DATE_TODAY}.log"
     date +"%Y-%m-%d %H:%M:%S"
     echo "GPU cores: $CUDA_VISIBLE_DEVICES"
     echo "================================================================="
-} | tee "$LOG_FILE"
+} | tee -a "$LOG_FILE"
+
+
+{
+    echo "Step 0/3: Warm Up"
+    python train.py --eval \
+    --warmup_only \
+    -s "$DATASET_DIR" \
+    -m "$SAVE_DIR" \
+    --texture_obj_path "$MESH_FILE" \
+    --mesh_type "$MESH_TYPE" \
+    --debugging \
+    --occlusion \
+    --total_splats "$BUDGET"\
+    --alloc_policy "$POLICY" \
+    --gs_type gs_mesh \
+    $IS_WHITE_BG \
+    --iteration 10 \
+    #--resolution 4
+
+
+
+    # --budget_per_tri "$UNIT_BUDGET" \
+} | tee -a "$LOG_FILE"
 
 
 
@@ -57,9 +85,12 @@ LOG_FILE="pipeline-${DATE_TODAY}.log"
     --occlusion \
     --total_splats "$BUDGET"\
     --alloc_policy "$POLICY" \
+    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" \
     --gs_type gs_mesh \
     $IS_WHITE_BG \
-    --iteration 10
+    --iteration 10 \
+    #--resolution 4
+
 
 
 
@@ -79,7 +110,9 @@ python render_mesh_splat.py \
     --alloc_policy "$POLICY" \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
-    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy"
+    --policy_path "${SAVE_DIR}/${policy}_${budget}.npy" \
+    #--resolution 4
+
 
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"
@@ -88,7 +121,10 @@ python render_mesh_splat.py \
 
 {
 echo "Step 3/3: Metrics computation"
-echo "skipping for now..."
+
+python metrics.py \
+    -m "$SAVE_DIR" \
+    --gs_type gs_mesh
 } | tee -a "$LOG_FILE"
 
 

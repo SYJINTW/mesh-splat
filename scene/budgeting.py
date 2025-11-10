@@ -79,6 +79,12 @@ class BudgetingPolicy(ABC):
         pass
 
 
+class MixedBudgetingPolicy(BudgetingPolicy):
+    # 2D loss (distortion) map + 3D geometric property (e.g. mesh geometry)
+    weight_distortion: float = 0.5 # hyperparameter to be tuned empirically
+    weight_geometry: float = 1.0 - weight_distortion
+    pass
+
 
 class AreaBasedBudgetingPolicy(BudgetingPolicy):
     """
@@ -407,16 +413,35 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
         n_norm[n_norm == 0] = 1.0
         normals = normals / n_norm
 
+        # [DOING] [TODO] [BUG] Investigate adjacency list construction for meshes with non-standard topology.
+        # There may be issues if the mesh is not watertight or has missing/incorrect face adjacency.
+        # Build adjacency list from face_adjacency
         adj = [[] for _ in range(F)]
-        fa = getattr(mesh, "face_adjacency", None)
-        if fa is None or fa.size == 0:
-        # No adjacency info; fall back to per-face normal magnitude (all 1)
-            print(f"[WARNING] PlanarityBasedBudgetingPolicy: Failed to compute MRL, fallback to uniform weights.")
-
+        
+        # Check if mesh is watertight/has valid topology
+        if not mesh.is_watertight:
+            print(f"[WARNING] Mesh is not watertight - may have incomplete adjacency")
+        
+        # Access face_adjacency - this triggers computation
+        fa = mesh.face_adjacency
+        
+        if fa is None or len(fa) == 0:
+            print(f"[WARNING] PlanarityBasedBudgetingPolicy: Mesh has no face adjacency.")
+            print(f"[DEBUG] Mesh has {len(mesh.edges)} edges, {len(mesh.edges_unique)} unique edges")
+            print(f"[DEBUG] This usually means the mesh has no shared edges between triangles")
             return np.ones((F,), dtype=np.float32)
+        
+        print(f"[DEBUG] Found {len(fa)} face adjacency pairs for {F} faces")
+        
+        # Build adjacency list
         for a, b in fa:
             adj[int(a)].append(int(b))
             adj[int(b)].append(int(a))
+        
+        # Verify adjacency was built
+        num_isolated = sum(1 for neighbors in adj if len(neighbors) == 0)
+        if num_isolated > 0:
+            print(f"[WARNING] {num_isolated}/{F} faces have no neighbors")
 
         def neighborhood(seed: int) -> np.ndarray:
             if hops <= 0:
@@ -438,8 +463,8 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
             nb = neighborhood(i)
             mean_n = normals[nb].mean(axis=0)
             m = np.linalg.norm(mean_n).astype(np.float32)
-        # clamp to [0,1]
-            m = float(np.clip(m, 0.0, 1.0))
+            
+            m = float(np.clip(m, 0.0, 1.0)) # clamp to [0,1]
             mrl[i] = m
 
         return mrl
@@ -447,7 +472,7 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
 
 
 
-#[TODO] [BUG] the policy was not correctly loaded during render_mesh_splat?
+#[FIXED] the policy was not correctly loaded during render_mesh_splat
 class DistortionMapBudgetingPolicy(BudgetingPolicy):
     """
     Allocate points based on distortion/error of rendering textured mesh vs ground truths.
@@ -488,6 +513,9 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             self.viewpoint_camera_infos, resolution_scale=1.0, 
             args=args
         )
+        # [DOING] [BUG] will break if the cameras are from a COLMAP dataset
+        # error: CUDA OOM, but why?
+        ## camera original images are too large?
         assert isinstance(self.viewpoint_cameras[0], Camera), "DistorsionMapPolicy::can't get Camera objects for view_points"
 
         # Compute distortion weights and assign to self.weights
@@ -567,13 +595,15 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         # If not loaded from file, construct white trimesh 3D mesh
         if mesh_path is None:
             p3d_mesh = tm2p3d_mesh
-        
+    
         num_faces = faces.shape[0]
         dist_map_all = np.zeros(num_faces, dtype=np.float32)
         per_view_debug = [] if self.debugging else None  # collect per-view artifacts for debugging
         
         for idx, viewpoint_camera in enumerate(self.viewpoint_cameras):
             # Load ground truth image
+            
+            # [TODO] fix hardcoded old path
             gt_image_path = f"{self.dataset_path}/mesh_texture/{viewpoint_camera.image_name}.png"
                 
             if not os.path.exists(gt_image_path):
@@ -652,7 +682,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             
             # save distortion point cloud, heatmap, and per-view rendered mesh
             self._save_debug_visualization(dist_map_all, per_view_debug=per_view_debug)
-        
+            
             # check mesh format and coordinate systems
             print(f"[DEBUG] p3d_mesh verts range: {p3d_mesh.verts_packed().min():.4f} to {p3d_mesh.verts_packed().max():.4f}")
             print(f"[DEBUG] tm2p3d_mesh verts range: {tm2p3d_mesh.verts_packed().min():.4f} to {tm2p3d_mesh.verts_packed().max():.4f}")
@@ -679,7 +709,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
             import matplotlib.pyplot as plt
             import open3d as o3d
 
-            base_dir = "./debug_distortion"
+            base_dir = "./distortion_debug_visualization"
             heatmap_dir = os.path.join(base_dir, "heatmap")
             mesh_bg_dir = os.path.join(base_dir, "mesh_bg")
             os.makedirs(heatmap_dir, exist_ok=True)
@@ -690,7 +720,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 for item in per_view_debug:
                     name = str(item.get("image_name", f"view_{item.get('index', 0)}"))
                     p3d_mesh_color = item["p3d_mesh_color"]
-                    print(f"[DEBUG] shape: {p3d_mesh_color.shape}, type: {type(p3d_mesh_color)}")
+                    # print(f"[DEBUG] shape: {p3d_mesh_color.shape}, type: {type(p3d_mesh_color)}")
                     # Save rendered mesh background
                     try:
                         p3d_mesh_color_pil = TF.to_pil_image(p3d_mesh_color.cpu())
