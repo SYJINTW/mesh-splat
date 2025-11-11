@@ -87,7 +87,8 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             texture_obj_path, 
             debugging, debug_freq,
             occlusion,
-            policy_path
+            policy_path,
+            precaptured_mesh_img_path
             # <<<< [YC] add
             ):
     
@@ -118,22 +119,60 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         gaussians.restore(model_params, opt)
 
     if debugging:
-        print("Debugging mode is on.")
+        print("[DEBUG] [INFO] Debugging mode is on.")
         check_path = Path(scene.model_path)/"debugging"/"training_check"
         check_path.mkdir(parents=True, exist_ok=True)
     
-    
-    # [NOTE] early exit for warmup-only stage     
     if dataset.warmup_only:
-        print("[INFO] Only run warmup stage, exiting...")
+        if not precaptured_mesh_img_path:
+            raise ValueError("precaptured_mesh_img_path must be provided for warmup_only mode")
+        # Precapture mesh_bg and mesh_bg_depth in warmup stage
+        precaptured_bg_dir = Path(precaptured_mesh_img_path) / "mesh_texture"
+        precaptured_depth_dir = Path(precaptured_mesh_img_path) / "mesh_depth"
+        
+        # Ensure directories exist
+        precaptured_bg_dir.mkdir(parents=True, exist_ok=True)
+        precaptured_depth_dir.mkdir(parents=True, exist_ok=True)
+        
+        print("[INFO] Warmup stage: Generating precaptured mesh background and depth images...")
+        
+        for cam in tqdm(scene.getTrainCameras(), desc="Precapturing backgrounds", unit="camera"):
+            # Generate file paths
+            bg_save_path = precaptured_bg_dir / f"{cam.image_name}.png"
+            depth_save_path = precaptured_depth_dir / f"{cam.image_name}.pt"
+            
+            # Skip if already exists
+            if bg_save_path.exists() and depth_save_path.exists():
+                print(f"\t[INFO] Skipping {cam.image_name}, already exists.")
+                continue
+            
+            # Render background and depth
+            render_pkg = render(cam, gaussians, pipe, 
+                                bg_color=None, bg_depth=None, 
+                                textured_mesh=scene.textured_mesh)
+            
+            # Save background image
+            bg_image = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
+            bg_image_pil = TF.to_pil_image(bg_image)
+            bg_image_pil.save(bg_save_path)
+            
+            # Save depth image
+            bg_depth = render_pkg["bg_depth"].detach().cpu()
+            torch.save(bg_depth, depth_save_path)
+            
+            print(f"[INFO] Saved precaptured results for {cam.image_name}")
+        
+        print("[INFO] Warmup stage complete. Exiting...")
         exit()
+    # [NOTE] early exit for warmup-only stage     
     
     
     print("[INFO] Finished Warm-Up, Start Training..." )
     #  ------------------------Warm Up Done--------------------------- #
     
     
-    # [NOTE] Not sure why need to get background in this part
+    # [NOTE] the background fetched in this part is for network GUI debugger only 
+    # (not used by us, and not used by training loop)
     # --------------------------- Load background image -------------------------- #
     background_image_path = "/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/r_0.png"
     img = Image.open(background_image_path).convert("RGB")
@@ -162,6 +201,22 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    
+    # [TODO] profile the training loop to identify bottlenecks
+    # [TODO] test on a gs_type=gs
+    
+    if gs_type == "gs_mesh":
+        
+        if occlusion:
+            print("[INFO] DTGS training:: using Depth+Texture+GS rasterizer with occlusion for gs_mesh")
+        else:
+            print("[INFO] TGS training:: using Texture+GS rasterizer for gs_mesh")
+    elif gs_type == "gs":
+        print("[INFO] GS training:: using original GS rasterizer for gs")
+    else: 
+        pass        
+    
+    
     for iteration in range(first_iter, opt.iterations + 1):
         os.makedirs(f"{scene.model_path}/xyz", exist_ok=True)
         if save_xyz and (iteration % 5000 == 1 or iteration == opt.iterations):
@@ -192,6 +247,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
+            print(f"[DEBUG] Train:: current SH degree: {gaussians.active_sh_degree}")
 
         # Pick a random Camera
         if not viewpoint_stack:
@@ -213,22 +269,32 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         
         # ------------------------------ Mesh background ----------------------------- #
         
-        # [TODO] fix hardcoded old gt path
-        
-        bg = None
-        # if textured_mesh is None:
-        #     # print("Loading precaptured background for rendering...")
-        #     bg_image_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_texture/{viewpoint_cam.image_name}.png"
-        #     img = Image.open(bg_image_path).convert("RGB")
-        #     img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR) # (W, H)
-        #     bg = transform(img).to(torch.float32).cuda()
+        if precaptured_mesh_img_path:
+            cached_bg_path = Path(precaptured_mesh_img_path) / "mesh_texture" / f"{viewpoint_cam.image_name}.png"
+            if cached_bg_path.exists():
+                img = Image.open(cached_bg_path).convert("RGB")
+                img = img.resize((viewpoint_camera_width, viewpoint_camera_height), Image.BILINEAR)  # (W, H)
+                bg = transform(img).to(torch.float32).cuda()
+            #     if iteration % debug_freq == 0:
+            #         print(f"[INFO] [DEBUG] Loaded cached background image from {cached_bg_path}")
+                
+            # else:
+            #     if iteration % debug_freq == 0:
+            #         print(f"[INFO] Cached background image not found at {cached_bg_path}, skipping...")
         
         # ------------------------------ Mesh depth background ----------------------------- #
-        bg_depth = None
-        # if textured_mesh is None:
-        #     # print("Loading precaptured depth for rendering...")
-        #     bg_depth_pt_path = f"/mnt/data1/syjintw/NEU/dataset/hotdog/mesh_depth/{viewpoint_cam.image_name}.pt"
-        #     bg_depth = torch.load(bg_depth_pt_path).unsqueeze(0).to("cuda")
+        
+        if precaptured_mesh_img_path:
+            cached_bg_depth_path = Path(precaptured_mesh_img_path) / "mesh_depth" / f"{viewpoint_cam.image_name}.pt"
+            if cached_bg_depth_path.exists():
+                bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
+            #     if iteration % debug_freq == 0:
+            #         print(f"[INFO] [DEBUG] Loaded cached depth image from {cached_bg_depth_path}")
+                
+            # else:
+            #     if iteration % debug_freq == 0:
+            #         print(f"[INFO] Cached depth image not found at {cached_bg_depth_path}, skipping...")
+
 
         # ------------------------------ Pure background ----------------------------- #
         pure_bg_template = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -250,19 +316,16 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         elif gs_type == "gs_mesh":
             if occlusion: # [YC] use occlusion diff-gaussian-rasterizer for training
                 render_pkg = render(viewpoint_cam, gaussians, pipe, 
-                                    bg_color=bg, bg_depth=bg_depth,
-                                    textured_mesh=scene.textured_mesh) # [YC] if there is textured mesh, it will use mesh renderer to get bg and bg_depth
-                print("[INFO] DTGS training:: using Depth+Texture+GS rasterizer for gs_mesh")
+                                    bg_color=bg, bg_depth=bg_depth, 
+                                    textured_mesh=scene.textured_mesh) 
+                # [YC] if there bg or bg_depth isn't provided, but textured mesh is given, it will use mesh renderer to produce bg and bg_depth
                 
             else: # [YC] use original diff-gaussian-rasterizer for training
                 render_pkg = render(viewpoint_cam, gaussians, pipe, 
-                                    bg_color=bg, bg_depth=pure_bg_depth,
-                                    textured_mesh=scene.textured_mesh) # [YC] no occlusion handling, always use pure bg and pure depth
-                print("[INFO] TGS training:: using Texture+GS rasterizer for gs_mesh")
+                                    bg_color=bg, bg_depth=pure_bg_depth, # [YC] no occlusion handling, use pure_bg_depth
+                                    textured_mesh=scene.textured_mesh) 
                 
                 
-        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg, bg_depth)
-        
         image = render_pkg["render"]
         viewspace_point_tensor, visibility_filter, radii = render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
@@ -589,9 +652,13 @@ if __name__ == "__main__":
     parser.add_argument('--occlusion', action='store_true')
     parser.add_argument('--policy_path', type=str, default="", 
         help="Path to the pre-computed .npy file storing num_gs_per_tri[]. \
-            When this is provided, it has higher priority than --alloc_policy; \
-            otherwise, will overwrite/recompute")
-    # parser.add_argument('--precaptured_mesh_img_path', type=str, default="")
+        When this is provided, it has higher priority than --alloc_policy; \
+        otherwise, will overwrite/recompute")
+    
+    parser.add_argument('--precaptured_mesh_img_path', type=str, default="",
+        help="path to the directory containing precaptured mesh (RGB & D) images for background. \
+            should contain mesh_texture/ and mesh_depth/ sub-folders."
+        ) # [NOTE] better store alongside mesh file
     # <<<< [YC] add
     
     # use either of the two to set total number of splats (bit budget, or gaussian budget for the whole scene)
@@ -638,7 +705,8 @@ if __name__ == "__main__":
         texture_obj_path=args.texture_obj_path,
         debugging=args.debugging, debug_freq=args.debug_freq,
         occlusion=args.occlusion,
-        policy_path=args.policy_path
+        policy_path=args.policy_path,
+        precaptured_mesh_img_path=args.precaptured_mesh_img_path
         # <<<< [YC] add
     )
 

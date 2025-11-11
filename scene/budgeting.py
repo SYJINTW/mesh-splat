@@ -164,6 +164,9 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         
         
         "distortion": DistortionMapBudgetingPolicy,
+        
+        "distortion_no_avg": partial(DistortionMapBudgetingPolicy, is_averaging_across_views=False),
+        
         "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
     try:
@@ -495,6 +498,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         device: str = "cuda",
         debugging: bool = True,
         p3d_mesh: Meshes = None, 
+        is_averaging_across_views: bool = True,
         **kwargs
     ):
         super().__init__(mesh, **kwargs)
@@ -504,6 +508,12 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         self.device = device
         self.debugging = debugging
         self.p3d_mesh = p3d_mesh  # Store the passed-in mesh
+        self.is_averaging_across_views = is_averaging_across_views
+        if self.is_averaging_across_views:
+            print(f"[INFO] DistortionMapBudgeter:: Averaging distortion across views")
+        else: 
+            print(f"[INFO] DistortionMapBudgeter:: Not averaging distortion across views")
+        
 
         assert self.viewpoint_camera_infos is not None and len(self.viewpoint_camera_infos) != 0, "DistorsionMapPolicy::Missing CamInfos"
 
@@ -597,7 +607,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         per_view_debug = [] if self.debugging else None
         
         
-        # [TODO] this is not really batch processing 
+        # [TODO] this is not really batch processing, it's still sequential
         # Batch processing with tqdm
         batch_size = 8  # Process 8 cameras at once - adjust based on GPU memory
         num_cameras = len(self.viewpoint_cameras)
@@ -644,6 +654,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                     faces_per_pixel=self.faces_per_pixel,
                     device=self.device
                 )
+                # the rendering function doesn't support batching yet
                 
                 p3d_mesh_color_rgb = torch.clamp(p3d_mesh_color_rgb, 0.0, 1.0)
                 
@@ -675,7 +686,13 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 
                 mean_dist = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
                 mask = count > 0
-                mean_dist[mask] = sum_dist[mask] / count[mask]
+                
+                if self.is_averaging_across_views:
+                    
+                    mean_dist[mask] = sum_dist[mask] / count[mask]
+                else:
+                    mean_dist[mask] = sum_dist[mask]
+                    
                 
                 # Accumulate distortion
                 dist_map_all += mean_dist

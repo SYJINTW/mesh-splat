@@ -132,5 +132,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
             "visibility_filter" : radii > 0,
             "radii": radii,
             "bg_color": bg_color, # [YC] add
+            "bg_depth": bg_depth
             # "depth": depth_image
             }

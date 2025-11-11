@@ -10,29 +10,35 @@
 # === [CONFIGS] ===========================
 export CUDA_VISIBLE_DEVICES=2
 
-BUDGET=(2000000) # arbitrary budget 
-# BUDGET=(131072) # arbitrary budget 
-# UNIT_BUDGET=1.6 # budget proportional to number of triangles
+# BUDGET=(2000000) # arbitrary budget 
+UNIT_BUDGET=0.6 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("distortion") # choose one from above
+POLICY=("area") # choose one from above
 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
 
 SCENE_NAME="bicycle" # or other NeRF scene name
 MESH_TYPE="colmap" # "sugar" or "colmap"
-# MESH_FILE="$DATASET_DIR/colmap_mesh.ply" # "mesh.obj" for sugar, "mesh.ply" for colmap
+
+# "mesh.obj" for sugar, "mesh.ply" for colmap
 MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
 
+# downsampled mesh (to 10%, 30%)
+# SCENE_NAME="bicycle_ds_10"
+# MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
+# MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
+
+MESH_IMG_DIR=$(dirname "$MESH_FILE")
 
 
 RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
-SAVE_DIR="output/${DATE_TODAY}/DEBUG_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${BUDGET}"
-POLICY_CACHED="${SAVE_DIR}/${POLICY}_${BUDGET}.npy"
+SAVE_DIR="output/${DATE_TODAY}/DEBUG_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
+POLICY_CACHED="${SAVE_DIR}/${POLICY}_${UNIT_BUDGET}.npy"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 
 # === [MAIN SCRIPT] ===========================
@@ -65,14 +71,15 @@ echo > "$LOG_FILE" # clear log file
     --mesh_type "$MESH_TYPE" \
     --debugging \
     --occlusion \
-    --total_splats "$BUDGET"\
+    --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
     --gs_type gs_mesh \
     --policy_path "$POLICY_CACHED" \
+    --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration 10 >> "$LOG_FILE"
-} 
+    --iteration 10
+} | tee -a "$LOG_FILE"
 
 
 
@@ -85,9 +92,10 @@ echo > "$LOG_FILE" # clear log file
     --mesh_type "$MESH_TYPE" \
     --debugging \
     --occlusion \
-    --total_splats "$BUDGET"\
+    --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
     --policy_path "$POLICY_CACHED" \
+    --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     $RESOLUTION \
@@ -108,7 +116,7 @@ python render_mesh_splat.py \
     --gs_type gs_mesh \
     --skip_train \
     --occlusion \
-    --total_splats "$BUDGET"\
+    --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
