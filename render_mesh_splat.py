@@ -123,6 +123,9 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
+
+        # [TODO] store more info about the scene into a json ("model card", "scene card")
+        # [TODO] test dropping splats during rendering too
         # Add new params here
         render_kwargs = {
             'mesh_type': mesh_type,

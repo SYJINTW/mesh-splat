@@ -216,7 +216,6 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                     RESULTS_JSON="${SAVE_DIR}/results_gs_mesh.json"
                     PLOT_JSON="${PLOT_DIR}/${policy}_${budget}_${occlusion_tag}.json"
 
-                    #[TODO] add jq for filtering and formatting if needed
                     if [ -f "$RESULTS_JSON" ]; then
                         cp "$RESULTS_JSON" "$PLOT_JSON"
                         echo "Results copied to: $PLOT_JSON" | tee -a "$LOG_FILE"

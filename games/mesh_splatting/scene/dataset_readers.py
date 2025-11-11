@@ -97,6 +97,11 @@ def get_num_splats_per_triangle(
         print(f"[INFO] Scene::Reader() Saving allocation policy file to: {allocation_save_path}")
         np.save(allocation_save_path, num_splats_per_triangle)
 
+        
+        # [TODO] save the weights[] 
+
+
+
     # Fallback: uniform distribution using num_splats
     else:
         num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
@@ -128,7 +133,7 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     
     
     
-    # [TODO] clean all the mesh loading logic into one place.
+    # not priority for now: clean all the mesh loading logic into one place.
     # [DONE] a workaround to send loaded-texture-mesh to budgeting.py
     if texture_obj_path is None:
         print(f"[INFO] DatasetReader::Reading Mesh object from {path}/mesh.obj")

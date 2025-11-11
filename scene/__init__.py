@@ -28,7 +28,7 @@ class Scene:
 
     gaussians : GaussianModel
     textured_mesh : Meshes
-    # [TODO] [major refactor] decouple the initialization/loading ordering problem, as they shouldn't be dependent on each other
+    # [major refactor, not now] decouple the initialization/loading ordering problem, as they shouldn't be dependent on each other
     # [DONE] use a workaround for now
     def __init__(self, 
                 args : ModelParams, 

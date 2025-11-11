@@ -283,7 +283,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             #         print(f"[INFO] Cached background image not found at {cached_bg_path}, skipping...")
         
         # ------------------------------ Mesh depth background ----------------------------- #
-        
+        # [TODO] perhaps prefetch everything at the start of training?
         if precaptured_mesh_img_path:
             cached_bg_depth_path = Path(precaptured_mesh_img_path) / "mesh_depth" / f"{viewpoint_cam.image_name}.pt"
             if cached_bg_depth_path.exists():
@@ -639,7 +639,7 @@ if __name__ == "__main__":
     # parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[3_000])
     # parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[3_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[3_000, 7_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
