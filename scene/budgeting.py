@@ -377,7 +377,14 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
     - focus='planar': more splats where neighborhood is planar (high MRL).
     """
     
-    def __init__(self, mesh: trimesh.Trimesh, hops: int = 1, focus: str = "nonplanar", **kwargs):
+    def __init__(
+        self, 
+        mesh: trimesh.Trimesh,
+        hops: int = 1, focus: str = "nonplanar", 
+        p3d_mesh: Meshes = None,   
+        **kwargs):
+        
+        
         super().__init__(mesh, **kwargs)
         self.hops = int(max(0, hops))
         self.focus = focus.lower()

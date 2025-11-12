@@ -10,7 +10,7 @@ export CUDA_VISIBLE_DEVICES=0
 # ======= Config ======
 
 # BUDGETS=(32768 65536 131072 262144 368589 524288 908094 1572865) # increasing order
-BUDGETS=(1572865 908094 524288 368589 262144 131072 65536 32768) # decreasing order
+BUDGETS=(1572865 908094 524288 368589 262144 131072 0) # decreasing order
 
 POLICIES=("uniform" "random" "area" "planarity" "distortion")
 WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile

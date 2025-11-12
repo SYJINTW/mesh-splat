@@ -11,10 +11,10 @@
 export CUDA_VISIBLE_DEVICES=2
 
 # BUDGET=(2000000) # arbitrary budget 
-UNIT_BUDGET=1.2 # budget proportional to number of triangles
+UNIT_BUDGET=1.5 # budget proportional to number of triangles
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("random") # choose one from above
+POLICY=("planarity") # choose one from above
 
 
 DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
@@ -25,7 +25,7 @@ MESH_TYPE="colmap" # "sugar" or "colmap"
 # "mesh.obj" for sugar, "mesh.ply" for colmap
 # MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
 
-# downsampled mesh (to 10%, 30%)
+### downsampled mesh (to 10%, 30%)
 # SCENE_NAME="bicycle_ds_10"
 MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
 # MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
