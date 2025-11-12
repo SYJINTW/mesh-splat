@@ -107,6 +107,13 @@ def get_num_splats_per_triangle(
         num_splats_per_triangle = np.full(triangles.shape[0], num_splats, dtype=int)
         print(f"[WARNING] Scene::Reader() Fallback using uniform distribution: {num_splats} splats per triangle")
 
+    num_pts = num_splats_per_triangle.sum()
+    print(f"[INFO] Generating random point cloud ({num_pts})...")
+    print(f"\tnumber of mesh faces:  {triangles.shape[0]}...")
+    print(f"\tAverage points per triangle: {num_pts / triangles.shape[0] if triangles.shape[0] > 0 else 0}...")
+        
+
+
     return num_splats_per_triangle
 
 
@@ -221,11 +228,9 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
             textured_mesh=textured_mesh
         )
         # <<<< [SAM] Budgeting policy integration
+        num_pts = num_splats_per_triangle.sum()
         
         # Since this data set has no colmap data, we start with random points sampled on the mesh surface
-        num_pts = num_splats_per_triangle.sum()
-        print(f"Generating random point cloud ({num_pts})...")
-        print(f"Average points per triangle: {num_pts / triangles.shape[0] if triangles.shape[0] > 0 else 0}...")
         
         # ---------------------------------------------------------------------------- #
         #                 Get initial Gaussian colors from texture map                 #

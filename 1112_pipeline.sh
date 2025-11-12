@@ -5,7 +5,7 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 
 # ======= Config ======
 

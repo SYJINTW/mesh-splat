@@ -618,7 +618,7 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
         # Create progress bar for batches
         batch_pbar = tqdm(
             range(0, num_cameras, batch_size),
-            desc="Processing camera batches",
+            desc="Distortion:: Processing camera batches",
             total=num_batches,
             unit="batch",
             ncols=100
