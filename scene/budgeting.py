@@ -388,8 +388,15 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
         super().__init__(mesh, **kwargs)
         self.hops = int(max(0, hops))
         self.focus = focus.lower()
+        self.p3d_mesh = p3d_mesh 
+        
         try:
-            mrl = self._compute_planarity_mrl(mesh, hops=self.hops)
+            # Try to use p3d_mesh if available, otherwise fall back to trimesh
+            if p3d_mesh is not None:
+                mrl = self._compute_planarity_mrl_p3d(p3d_mesh, hops=self.hops)
+            else:
+                mrl = self._compute_planarity_mrl(mesh, hops=self.hops)
+            
             if mrl is not None and len(mrl) == self.num_triangles:
                 if self.focus == "planar":
                     self.weights = np.maximum(mrl, EPS)  # high on planar
@@ -404,11 +411,96 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
 
         except Exception as e:
             print(f"[WARNING] PlanarityBasedBudgetingPolicy: Failed to compute planarity, falling back to uniform weights. Error: {e}")
-            # Fallback to uniform weights is handled by the base class __init__
+
+
+    def _compute_planarity_mrl_p3d(self, p3d_mesh: Meshes, hops: int = 1) -> Optional[np.ndarray]:
+        """
+        Compute planarity (MRL) using PyTorch3D mesh directly.
+        
+        Returns per-face mean resultant length (MRL) in [0,1], 1 = planar neighborhood.
+        """
+        verts = p3d_mesh.verts_packed()  # [V, 3]
+        faces = p3d_mesh.faces_packed()  # [F, 3]
+        
+        if verts is None or faces is None or len(faces) == 0:
+            return None
+        
+        F = int(faces.shape[0])
+        if F == 0:
+            return None
+        
+        # Compute face normals from vertices and faces
+        v0 = verts[faces[:, 0]]  # [F, 3]
+        v1 = verts[faces[:, 1]]  # [F, 3]
+        v2 = verts[faces[:, 2]]  # [F, 3]
+        
+        # Cross product to get normals
+        normals = torch.cross(v1 - v0, v2 - v0, dim=1)  # [F, 3]
+        
+        # Normalize to unit vectors
+        n_norm = torch.norm(normals, dim=1, keepdim=True)
+        n_norm = torch.clamp(n_norm, min=1e-8)
+        normals = normals / n_norm
+        normals = normals.cpu().numpy().astype(np.float32)
+        
+        # Build adjacency list from faces (edge-based)j
+        adj = [set() for _ in range(F)]
+        
+        # Extract edges and build face adjacency
+        edges_map = {}  # (min, max) -> [face_ids]
+        for face_id, face in enumerate(faces.cpu().numpy()):
+            for i in range(3):
+                v_a, v_b = face[i], face[(i+1) % 3]
+                edge = (min(v_a, v_b), max(v_a, v_b))
+                if edge not in edges_map:
+                    edges_map[edge] = []
+                edges_map[edge].append(face_id)
+        
+        # Connect faces that share edges
+        for face_list in edges_map.values():
+            for i in range(len(face_list)):
+                for j in range(i+1, len(face_list)):
+                    adj[face_list[i]].add(face_list[j])
+                    adj[face_list[j]].add(face_list[i])
+        
+        # Convert sets to lists
+        adj = [list(neighbors) for neighbors in adj]
+        
+        num_isolated = sum(1 for neighbors in adj if len(neighbors) == 0)
+        if num_isolated > 0:
+            print(f"[WARNING] {num_isolated}/{F} faces have no neighbors (isolated)")
+        
+        print(f"[DEBUG] Built adjacency from p3d_mesh: {sum(len(n) for n in adj)//2} edge pairs for {F} faces")
+
+        def neighborhood(seed: int) -> np.ndarray:
+            if hops <= 0:
+                return np.array([seed], dtype=np.int64)
+            visited = {seed}
+            q = deque([(seed, 0)])
+            while q:
+                v, d = q.popleft()
+                if d == hops:
+                    continue
+                for u in adj[v]:
+                    if u not in visited:
+                        visited.add(u)
+                        q.append((u, d + 1))
+            return np.fromiter(visited, dtype=np.int64)
+
+        mrl = np.zeros((F,), dtype=np.float32)
+        for i in range(F):
+            nb = neighborhood(i)
+            mean_n = normals[nb].mean(axis=0)
+            m = np.linalg.norm(mean_n).astype(np.float32)
+            m = float(np.clip(m, 0.0, 1.0))
+            mrl[i] = m
+
+        return mrl
 
 
     def _compute_planarity_mrl(self, mesh: trimesh.Trimesh, hops: int = 1) -> Optional[np.ndarray]:
         """
+        [ORIGINAL] Compute planarity using trimesh.
         Returns per-face mean resultant length (MRL) in [0,1], 1 = planar neighborhood.
         Uses face adjacency up to 'hops'.
         """
@@ -424,10 +516,9 @@ class PlanarityBasedBudgetingPolicy(BudgetingPolicy):
         n_norm[n_norm == 0] = 1.0
         normals = normals / n_norm
 
-        # [DOING] [TODO] [BUG] Investigate adjacency list construction for meshes with non-standard topology.
-        # [WORKAROUND] give the few neighbor-less faces 0 weight or something
-        # There may be issues if the mesh is not watertight or has missing/incorrect face adjacency.
-        # Build adjacency list from face_adjacency
+        # [bug fixed] Investigate adjacency list construction for meshes with non-standard topology.
+        # [TODO] [WORKAROUND] For now we give the few neighbor-less faces weight=0 (mrl=1.0)
+        # could set to 0.5 or other values instead.
         adj = [[] for _ in range(F)]
         
         # Check if mesh is watertight/has valid topology
