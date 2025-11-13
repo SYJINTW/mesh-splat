@@ -113,6 +113,9 @@ Configure at the top of the script:
 ```bash
 export CUDA_VISIBLE_DEVICES=3
 
+DATASET_DIR="/path/to/dataset"
+SAVE_DIR="/path/to/output"
+
 # Splat budgets to test (0 = mesh only, no splats)
 BUDGETS=( 1 3000000 2000000 1000000 524288 262144 131072 )
 
