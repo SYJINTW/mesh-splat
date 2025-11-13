@@ -14,8 +14,7 @@ export CUDA_VISIBLE_DEVICES=2
 BUDGETS=(1 3000000 2000000 1000000 524288 262144 131072 ) 
 
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
-# POLICIES=("area" "distortion" "planarity" "uniform" "random")
-POLICIES=( "planarity" )
+POLICIES=("planarity" "area" "distortion" "uniform" "random")
 
 WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
 # [TODO] also check pure GS training results
@@ -30,15 +29,11 @@ MESH_TYPE="colmap" # "sugar" or "colmap"
 MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply"
 
 
-
-
-
-
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
 
 
 RESOLUTION="" # or "--resolution 4" for faster debugging
-IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
+IS_WHITE_BG="" # set to "--white_background" if the dataset has white background
 
 
 
