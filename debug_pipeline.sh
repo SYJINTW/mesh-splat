@@ -13,22 +13,24 @@ export CUDA_VISIBLE_DEVICES=2
 # BUDGET=(2000000) # arbitrary budget 
 UNIT_BUDGET=1.5 # budget proportional to number of triangles
 
+# [TODO] make the pipeline support BUDGET=0 (mesh only) case
+
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
 POLICY=("planarity") # choose one from above
 
 
-DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
+DATASET_DIR="/mnt/data1/samk/NEU/dataset/bicycle" 
 
 SCENE_NAME="bicycle" # or other NeRF scene name
 MESH_TYPE="colmap" # "sugar" or "colmap"
 
 # "mesh.obj" for sugar, "mesh.ply" for colmap
-# MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
+# MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
 
 ### downsampled mesh (to 10%, 30%)
 # SCENE_NAME="bicycle_ds_10"
-MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
-# MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
+# MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
 

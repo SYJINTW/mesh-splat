@@ -1,11 +1,11 @@
 # Mesh-Splat
 
-Mesh-Splat is a research implementation built upon the official ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).
+Mesh-Splat is a research implementation built upon the official ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).  
 This project extends the original [official codebase](https://waczjoan.github.io/gaussian-mesh-splatting/) with additional utilities and experimental workflows for mesh-driven Gaussian Splatting and 3D rendering.
 
 # Installation
 
-## 1. Create the Conda environment
+## 1. Create the Conda Environment
 
 ```bash
 conda create --name meshsplat python=3.8
@@ -52,20 +52,20 @@ python -c "import torch; print(torch.__version__); print(torch.version.cuda); pr
 
 source: [Cuda and PyTorch Setup Guide \| SYJINTW](https://syjintw.github.io/posts/cuda-and-pytorch/)
 
-## 3. Install dependencies
+## 3. Install Dependencies
 
 ```
 pip install -r requirements.txt
 ```
 
-## 4. Setup submodules
+## 4. Setup Submodules
 
 ```
 pip install ./submodules/diff-gaussian-rasterization
 pip install ./submodules/simple-knn
 ```
 
-## 5. Build and install PyTorch3D
+## 5. Build and Install PyTorch3D
 
 ```
 mkdir ext
@@ -77,144 +77,300 @@ pip install -e .
 
 # Usage Example
 
-## Training
+## Quick Start: Full Pipeline with Debug Script
+
+For a complete pipeline (warmup → training → rendering → metrics) with a specific scene, policy, and budget:
 
 ```bash
-CUDA_VISIBLE_DEVICES=3 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/hotdog \
--m output/hotdog_testing \
---gs_type gs_mesh -w --iteration 10 \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---debugging \
---occlusion
+bash debug_pipeline.sh
 ```
 
-## Rendering
+Configure the script by editing these variables at the top:
 
 ```bash
-python ./render_mesh_splat.py \
--m output/hotdog_testing \
---gs_type gs_mesh \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
+export CUDA_VISIBLE_DEVICES=2
+
+UNIT_BUDGET=1.5                    # Budget proportional to number of triangles
+POLICY="planarity"                 # Options: planarity, area, distortion, uniform, random
+DATASET_DIR="/path/to/dataset"
+SCENE_NAME="bicycle"
+MESH_TYPE="colmap"                 # Options: "sugar" or "colmap"
+MESH_FILE="/path/to/mesh.ply"      # .ply for colmap, .obj for sugar
+RESOLUTION=""                      # Or "--resolution 4" for faster debugging
+IS_WHITE_BG="-w"                   # Or empty string for black background
 ```
 
-## Evaluation
+## Batch Experiments: Multiple Budgets and Policies
+
+For running experiments with multiple budgets, policies, and occlusion settings:
 
 ```bash
-python metrics.py \
--m /mnt/data1/syjintw/NEU/mesh-splat/output/hotdog_testing \
---gs_type gs_mesh
+bash 1113_pipeline.sh
 ```
 
-# Experiment Code
-
-## Compare performance of occlusion
-
-Using visual_distortion policy for evaluation
-
-### With occlusion
+Configure at the top of the script:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/hotdog \
--m output/hotdog_meshsplat_with_occlusion \
---gs_type gs_mesh -w --iteration 1000 \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---debugging --debug_freq 100 \
---occlusion \
---policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
+export CUDA_VISIBLE_DEVICES=3
+
+# Splat budgets to test (0 = mesh only, no splats)
+BUDGETS=( 1 3000000 2000000 1000000 524288 262144 131072 )
+
+# Allocation policies to test
+POLICIES=("area" "distortion" "planarity" "uniform" "random")
+
+# Test with and without occlusion
+WHETHER_OCCLUSION=("--occlusion" "")
+
+ITERATION="5000"
+EXP_NAME="1113_downsampled"
+
+SCENE_NAME="bicycle"
+MESH_TYPE="colmap"
+MESH_FILE="/path/to/mesh.ply"
 ```
 
-```bash
-CUDA_VISIBLE_DEVICES=0 python ./render_mesh_splat.py \
--m output/hotdog_meshsplat_with_occlusion \
---gs_type gs_mesh \
---skip_train \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---occlusion \
---policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
-```
+This script automatically:
 
-```bash
-CUDA_VISIBLE_DEVICES=0 python metrics.py \
--m output/hotdog_meshsplat_with_occlusion \
---gs_type gs_mesh
-```
+- Runs warmup, training, rendering, and metrics for each combination
+- Logs timing for each stage
+- Tracks failed experiments
+- Generates a timing summary TSV file: `output/EXPERIMENT_NAME/SCENE_NAME/pipeline_timing_summary.tsv`
+- Saves results of metrics as JSON files to `output/EXPERIMENT_NAME/SCENE_NAME/for_plot/`
 
-### Without occlusion
+## Individual Pipeline Stages
 
-```bash
-CUDA_VISIBLE_DEVICES=1 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/hotdog \
--m output/hotdog_meshsplat_wo_occlusion \
---gs_type gs_mesh -w --iteration 1000 \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---debugging --debug_freq 100 \
---policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
-```
+### Step 0: Warmup (Optional - Pre-render Mesh Backgrounds, Precalculate Allocation Policies)
 
-```bash
-CUDA_VISIBLE_DEVICES=1 python ./render_mesh_splat.py \
--m output/hotdog_meshsplat_wo_occlusion \
---gs_type gs_mesh \
---skip_train \
---texture_obj_path /mnt/data1/syjintw/NEU/dataset/hotdog/mesh.obj \
---policy_path /mnt/data1/syjintw/NEU/dataset/hotdog/policy/visual_distortion.npy
-```
-
-```bash
-CUDA_VISIBLE_DEVICES=1 python metrics.py \
--m output/hotdog_meshsplat_wo_occlusion \
---gs_type gs_mesh
-```
-
-### Original Gaussian Splatting
-
-If "gs_type" is “gs”, then there is no "texture_obj_path" and "policy_path".
+Warmup pre-renders mesh backgrounds and depth maps for all training cameras. This is optional and can speed up initialization, but is not required.
 
 ```bash
 CUDA_VISIBLE_DEVICES=2 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/hotdog \
--m output/hotdog_gs \
---gs_type gs -w --iteration 1000 \
---debugging --debug_freq 100
+  --warmup_only \
+  -s /path/to/dataset \
+  -m output/exp_name \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --gs_type gs_mesh \
+  --debugging \
+  --debug_freq 100 \
+  --total_splats 1000000 \
+  --alloc_policy planarity \
+  --precaptured_mesh_img_path /path/to/mesh/dir \
+  -w --iteration 10
 ```
+
+**What warmup does:**
+
+- Pre-renders mesh backgrounds and depth maps for all training cameras
+- Saves to `precaptured_mesh_img_path/mesh_texture/` and `mesh_depth/` directories
+- Generates or validates policy allocation file (.npy)
+- Exits after completion, does not enter training loop
+- Optional for both `--occlusion` and non-occlusion modes
+
+### Step 1: Training
 
 ```bash
-CUDA_VISIBLE_DEVICES=2 python ./render_gs.py \
--m output/hotdog_gs \
---gs_type gs \
---skip_train
+CUDA_VISIBLE_DEVICES=2 python train.py --eval \
+  -s /path/to/dataset \
+  -m output/exp_name \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --gs_type gs_mesh \
+  --debugging \
+  --debug_freq 100 \
+  --occlusion \
+  --total_splats 1000000 \
+  --alloc_policy planarity \
+  --policy_path output/exp_name/policy.npy \
+  --precaptured_mesh_img_path /path/to/mesh/images \
+  -w --iteration 5000
 ```
+
+**Alternative: Use `--budget_per_tri` instead of `--total_splats`:**
 
 ```bash
-CUDA_VISIBLE_DEVICES=2 python metrics.py \
--m output/hotdog_gs \
---gs_type gs
+python train.py --eval \
+  -s /path/to/dataset \
+  -m output/exp_name \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --gs_type gs_mesh \
+  --budget_per_tri 1.5 \
+  --alloc_policy planarity \
+  -w --iteration 5000
 ```
 
-### GaMeS
+### Step 2: Rendering
 
-Tricky part: Also using "gs_type" is “gs_mesh”
+```bash
+python render_mesh_splat.py \
+  -m output/exp_name \
+  --gs_type gs_mesh \
+  --skip_train \
+  --occlusion \
+  --total_splats 1000000 \
+  --alloc_policy planarity \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --policy_path output/exp_name/policy.npy
+```
 
-### [YC] note
+### Step 3: Evaluation Metrics
+
+```bash
+python metrics.py \
+  -m output/exp_name \
+  --gs_type gs_mesh
+```
+
+## Key Command-Line Arguments
+
+### Dataset & Mesh
+
+| Argument                 | Description                           | Type           |
+| ------------------------ | ------------------------------------- | -------------- |
+| `-s, --source_path`      | Path to dataset directory             | str (required) |
+| `-m, --model_path`       | Output model directory                | str (required) |
+| `--texture_obj_path`     | Path to mesh file (.obj or .ply)      | str            |
+| `--mesh_type`            | Mesh source type: `sugar` or `colmap` | str            |
+| `-w, --white_background` | Use white background (not black)      | flag           |
+
+### Mesh-Splat Configuration
+
+| Argument           | Description                                                    | Default   |
+| ------------------ | -------------------------------------------------------------- | --------- |
+| `--gs_type`        | Renderer type: `gs`, `gs_flat`, or `gs_mesh`                   | `gs_mesh` |
+| `--total_splats`   | Total number of splats for entire scene                        | None      |
+| `--budget_per_tri` | Splats per triangle (multiplier)                               | 1.0       |
+| `--alloc_policy`   | Policy: `uniform`, `random`, `area`, `planarity`, `distortion` | `area`    |
+
+| Argument                      | Description                                                      | Default  |
+| ----------------------------- | ---------------------------------------------------------------- | -------- |
+| `--occlusion`                 | Enable occlusion-aware rendering                                 | Disabled |
+| `--policy_path`               | Path to pre-computed policy `.npy` file                          | None     |
+| `--precaptured_mesh_img_path` | Dir with `mesh_texture/` and `mesh_depth/` subdirs (from warmup) | None     |
+
+### Training Configuration
+
+| Argument        | Description                       | Default |
+| --------------- | --------------------------------- | ------- |
+| `--iteration`   | Number of training iterations     | 1000    |
+| `--eval`        | Enable evaluation during training | False   |
+| `--warmup_only` | Only run warmup stage and exit    | False   |
+|                 |                                   |         |
+
+### Debugging
+
+| Argument       | Description                               | Default |
+| -------------- | ----------------------------------------- | ------- |
+| `--debugging`  | Save debug visualizations during training | False   |
+| `--debug_freq` | Frequency of saving debug images          | 1       |
+
+## Comparison: Different Rendering Types
+
+### Original Gaussian Splatting (pure GS)
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/hotdog \
--m output/hotdog_testing \
---gs_type gs_mesh -w --iteration 10 \
---mesh_type colmap --texture_obj_path /mnt/data1/syjintw/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply \
---debugging --debug_freq 1 \
---occlusion
+  -s /path/to/dataset \
+  -m output/gs_only \
+  --gs_type gs \
+  -w --iteration 5000 \
+  --debugging --debug_freq 100
 ```
 
 ```bash
-CUDA_VISIBLE_DEVICES=3 python train.py --eval \
--s /mnt/data1/syjintw/NEU/dataset/bicycle \
--m output/bicycle_testing \
---gs_type gs_mesh -w --iteration 10 \
---mesh_type colmap --texture_obj_path /mnt/data1/syjintw/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply \
---debugging --debug_freq 1 \
---occlusion
+python render_gs.py -m output/gs_only --gs_type gs --skip_train
+python metrics.py -m output/gs_only --gs_type gs
 ```
+
+### Mesh-Splat WITH Occlusion
+
+```bash
+# Step 1: Training (warmup optional)
+CUDA_VISIBLE_DEVICES=1 python train.py --eval \
+  -s /path/to/dataset \
+  -m output/meshsplat_with_occ \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --gs_type gs_mesh \
+  --occlusion \
+  --budget_per_tri 1.5 \
+  --alloc_policy planarity \
+  -w --iteration 5000
+
+# Step 2: Rendering
+python render_mesh_splat.py \
+  -m output/meshsplat_with_occ \
+  --gs_type gs_mesh \
+  --skip_train \
+  --occlusion \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap
+```
+
+### Mesh-Splat WITHOUT Occlusion
+
+```bash
+# Step 1: Training
+CUDA_VISIBLE_DEVICES=2 python train.py --eval \
+  -s /path/to/dataset \
+  -m output/meshsplat_no_occ \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap \
+  --gs_type gs_mesh \
+  --budget_per_tri 1.5 \
+  --alloc_policy planarity \
+  -w --iteration 5000
+
+# Step 2: Rendering
+python render_mesh_splat.py \
+  -m output/meshsplat_no_occ \
+  --gs_type gs_mesh \
+  --skip_train \
+  --texture_obj_path /path/to/mesh.ply \
+  --mesh_type colmap
+```
+
+## Mesh Format Notes
+
+**SuGaR meshes (.obj):**
+
+```bash
+--mesh_type sugar --texture_obj_path /path/to/mesh.obj
+```
+
+**Colmap meshes (.ply):**
+
+```bash
+--mesh_type colmap --texture_obj_path /path/to/mesh.ply
+```
+
+## Output Structure
+
+```
+output/
+├── EXPERIMENT_NAME/
+│   ├── SCENE_NAME/
+│   │   ├── policy_1.0_occlusion/
+│   │   │   ├── log_pipeline_*.log
+│   │   │   ├── policy.npy
+│   │   │   ├── results_gs_mesh.json
+│   │   │   └── ...
+│   │   ├── pipeline_timing_summary.tsv
+│   │   ├── failed_experiments.log
+│   │   └── for_plot/
+│   │       └── *.json (results for plotting)
+│   └── log/
+│       └── *.log
+```
+
+## Notes
+
+- **Warmup is optional:** Pre-renders mesh backgrounds for faster initialization, but not required
+- **Budget modes:** Use either `--total_splats` for absolute budget or `--budget_per_tri` for relative budget
+- **Policy files:** Generated during training or warmup, can be reused across experiments
+- **Precaptured images:** Optional. If not provided, will be computed on-the-fly during training
+- **Debugging:** Enable `--debugging` and set `--debug_freq` to inspect intermediate visualizations
+- **Occlusion flag:** Works independently - use with or without warmup as needed
