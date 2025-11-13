@@ -239,7 +239,8 @@ def readColmapSingleMeshSceneInfo(
             budgeting_policy_name=budgeting_policy_name,
             min_splats_per_tri=min_splats_per_tri,
             max_splats_per_tri=max_splats_per_tri,
-            textured_mesh=textured_mesh
+            textured_mesh=textured_mesh,
+            mesh_type=mesh_type
             
         )
         # <<<< [SAM] Budgeting policy integration

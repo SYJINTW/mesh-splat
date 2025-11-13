@@ -167,6 +167,7 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         
         "distortion_no_avg": partial(DistortionMapBudgetingPolicy, is_averaging_across_views=False),
         
+        "mixed": None,
         "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
     try:

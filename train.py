@@ -202,7 +202,6 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     
-    # [TODO] profile the training loop to identify bottlenecks
     # [TODO] test on a gs_type=gs
     
     if gs_type == "gs_mesh":

@@ -16,7 +16,6 @@ BUDGETS=(3000000 2000000 1000000 524288 368589 262144 131072 0)
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
 POLICIES=("area" "distortion" "uniform" "random")
 WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
-# [TODO] also check pure GS training results
 
 ITERATION="7000"
 

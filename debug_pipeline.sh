@@ -24,9 +24,6 @@ DATASET_DIR="/mnt/data1/samk/NEU/dataset/bicycle"
 SCENE_NAME="bicycle" # or other NeRF scene name
 MESH_TYPE="colmap" # "sugar" or "colmap"
 
-# "mesh.obj" for sugar, "mesh.ply" for colmap
-# MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/checkpoint/mesh.ply"
-
 ### downsampled mesh (to 10%, 30%)
 # SCENE_NAME="bicycle_ds_10"
 MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"

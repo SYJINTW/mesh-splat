@@ -50,7 +50,8 @@ def get_num_splats_per_triangle(
     budgeting_policy_name: str = "uniform",
     min_splats_per_tri: int = 0, # [NOTE] could be adjusted
     max_splats_per_tri: int = 8,
-    textured_mesh = None
+    textured_mesh = None,
+    mesh_type : str = "sugar"
 )-> np.ndarray: # [N,], number of splats on each triangle
     
     # define allocation_path only when policy_path provided
@@ -61,6 +62,8 @@ def get_num_splats_per_triangle(
         print(f"[INFO] Loading splat allocation from: {allocation_path}")
         num_splats_per_triangle = np.load(allocation_path)
         print("[INFO] loaded distribution, max and min:", num_splats_per_triangle.max(), num_splats_per_triangle.min())
+    
+    # [DONE] load weights here
             
     # Use budgeting policy, computing on-the-fly
     elif total_splats is not None:
@@ -90,15 +93,22 @@ def get_num_splats_per_triangle(
         print(f"[INFO] Scene::Reader() Min/Max splats per triangle: {num_splats_per_triangle.min()}/{num_splats_per_triangle.max()}")
         print(f"[INFO] Scene::Reader() Mean/Std splats per triangle: {num_splats_per_triangle.mean():.2f}/{num_splats_per_triangle.std():.2f}")
 
-        # save under {dataset_path}/policy/{}.npy
-        allocation_save_path = Path(path) / f"policy/{budgeting_policy_name}_{total_splats}.npy"
+        # save under {dataset_path}/policy/mesh_{mesh_type}/tri_{num_tri}/{policy_name}/
+        # budget: {total_splats}.npy
+        # weights: weights.npy (same for any budget using the same policy & same mesh)
+        num_tri = num_splats_per_triangle.shape[0]
+        allocation_save_path = Path(path) / f"policy/mesh_{mesh_type}/tri_{num_tri}/{budgeting_policy_name}/{total_splats}.npy"
         allocation_save_path.parent.mkdir(parents=True, exist_ok=True)
         assert allocation_save_path.parent.exists(), "Directory does not exist, please create it first!"
-        print(f"[INFO] Scene::Reader() Saving allocation policy file to: {allocation_save_path}")
-        np.save(allocation_save_path, num_splats_per_triangle)
-
+        weights_save_path = allocation_save_path.parent / f"weights.npy"
         
-        # [TODO] save the weights[] 
+        np.save(allocation_save_path, num_splats_per_triangle)
+        print(f"[INFO] Scene::Reader() Saving allocation policy file to: {allocation_save_path}")
+
+        np.save(weights_save_path, budgeting_policy.weights)
+        print(f"[INFO] Scene::Reader() Saving weights file to: {weights_save_path}")
+        
+        # [DOING] [DONE] save the weights[] 
 
 
 
@@ -148,9 +158,6 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
     else:
         print(f"[INFO] Reading Mesh object from {texture_obj_path}")
         mesh_scene = trimesh.load(texture_obj_path, force='mesh')
-
-    # [TODO] check mesh connectivity here
-    # test to load with pytorch3d to see if it's trimesh's issue
 
 
     # >>>> [YC] add: because the mesh is generated from torch3d, so need to rotate
@@ -225,7 +232,8 @@ def readNerfSyntheticMeshInfo( # don't use num_splats
             budgeting_policy_name=budgeting_policy_name,
             min_splats_per_tri=min_splats_per_tri,
             max_splats_per_tri=max_splats_per_tri,
-            textured_mesh=textured_mesh
+            textured_mesh=textured_mesh,
+            mesh_type=mesh_type,
         )
         # <<<< [SAM] Budgeting policy integration
         num_pts = num_splats_per_triangle.sum()
