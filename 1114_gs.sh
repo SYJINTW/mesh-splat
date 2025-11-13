@@ -5,38 +5,30 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 
 # ======= Config ======
 
 # in decreasing order
 # 0 means only mesh, no splats
-BUDGETS=(1 3000000 2000000 1000000 524288 262144 131072 ) 
+BUDGETS=(3000000 2000000 1000000 524288 368589 262144 131072 0) 
 
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
-# POLICIES=("area" "distortion" "planarity" "uniform" "random")
-POLICIES=( "planarity" )
-
+POLICIES=("area" "distortion" "uniform" "random")
 WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
-ITERATION="5000"
+ITERATION="7000"
 
-EXP_NAME="1113_downsampled"
+EXP_NAME="1113_original_GS"
 
-DATASET_DIR="/mnt/data1/syjintw/NEU/dataset/bicycle" 
+DATASET_DIR="/mnt/data1/samk/NEU/dataset/bicycle" 
 
-# SCENE_NAMES=("bicycle" "hotdog")
 SCENE_NAME="bicycle" # add a loop for multiple scenes if needed
 MESH_TYPE="colmap" # "sugar" or "colmap"
 
 # downsampled mesh (to 10%)
-MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
-# MESH_FILE="/mnt/data1/syjintw/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply"
-
-
-
-
+MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
 
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")

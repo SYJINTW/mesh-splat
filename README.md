@@ -244,8 +244,8 @@ python metrics.py \
 | Argument           | Description                                                    | Default   |
 | ------------------ | -------------------------------------------------------------- | --------- |
 | `--gs_type`        | Renderer type: `gs`, `gs_flat`, or `gs_mesh`                   | `gs_mesh` |
-| `--total_splats`   | Total number of splats for entire scene                        | None      |
-| `--budget_per_tri` | Splats per triangle (multiplier)                               | 1.0       |
+| `--total_splats`   | Total number of splats for entire scene, int                   | None      |
+| `--budget_per_tri` | Splats per triangle (multiplier), float                        | 1.0       |
 | `--alloc_policy`   | Policy: `uniform`, `random`, `area`, `planarity`, `distortion` | `area`    |
 
 | Argument                      | Description                                                      | Default  |
