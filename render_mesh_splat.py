@@ -70,14 +70,16 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             if occlusion:
                 rendering = render(view, gaussians, pipeline, 
                                 bg_color=None, bg_depth=None,
-                                textured_mesh=textured_mesh)["render"] # [YC] using different rasterizer
+                                textured_mesh=textured_mesh,
+                                mesh_background_color=background)["render"] # [YC] using different rasterizer
                 print("\033[92m [INFO] Render::DTGS using Depth+Texture+GS rasterizer for gs_mesh\033[0m")
                 
             else: 
                 pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
                 rendering = render(view, gaussians, pipeline, 
                                 bg_color=None, bg_depth=pure_bg_depth,
-                                textured_mesh=textured_mesh)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
+                                textured_mesh=textured_mesh,
+                                mesh_background_color=background)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
                 print("\033[96m [INFO] Render::TGS using Texture+GS rasterizer for gs_mesh\033[0m")
                 
         gt = view.original_image[0:3, :, :]

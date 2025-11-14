@@ -36,7 +36,7 @@ RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
-SAVE_DIR="output/${DATE_TODAY}/DEBUG_${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
+SAVE_DIR="output/_DEBUG_${DATE_TODAY}/${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
 POLICY_CACHED="${SAVE_DIR}/${POLICY}_${UNIT_BUDGET}.npy"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 

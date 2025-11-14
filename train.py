@@ -155,7 +155,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             render_pkg = render(cam, gaussians, pipe, 
                                 bg_color=None, bg_depth=None, 
                                 textured_mesh=scene.textured_mesh,
-                                background_color=bg_color
+                                mesh_background_color=bg_color
                                 )
             
             # Save background image
