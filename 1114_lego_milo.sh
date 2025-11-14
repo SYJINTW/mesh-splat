@@ -5,29 +5,28 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 
 # ======= Config ======
 
 # in decreasing order
 # 0 means only mesh, no splats
-BUDGETS=(148783 70000 30000 1) 
+BUDGETS=(313547 1 150000 750000) 
 
-# POLICIES=("area" "distortion" "uniform" "planarity" )
-POLICIES=( "distortion" "uniform" "planarity" )
-
+# POLICIES=("uniform" "random" "area" "planarity" "distortion")
+POLICIES=("area" "distortion" "uniform" "planarity" )
 
 WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
 ITERATION="7000"
 
-EXP_NAME="1114_hotdog_colmap"
+EXP_NAME="1114_lego_milo"
 
-SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
+SCENE_NAME="lego" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
-MESH_TYPE="colmap" # "sugar" or "colmap"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}/colmap_mesh/mesh.ply"
+MESH_TYPE="milo" # "sugar" or "colmap" or "milo"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/${SCENE_NAME}.ply"
 
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
@@ -161,7 +160,6 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                     --alloc_policy "$policy" \
                     --policy_path "$POLICY_CACHED" \
                     --precaptured_mesh_img_path "$MESH_IMG_DIR" \
-                    --precaptured_mesh_img_path "$MESH_IMG_DIR" \
                     --gs_type gs_mesh \
                     $IS_WHITE_BG \
                     $RESOLUTION \
@@ -195,6 +193,7 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                         --alloc_policy "$policy" \
                         --texture_obj_path "$MESH_FILE" \
                         --mesh_type "$MESH_TYPE" \
+                        --precaptured_mesh_img_path "$MESH_IMG_DIR" \
                         $RESOLUTION \
                         $IS_WHITE_BG \
                         --policy_path "$POLICY_CACHED" \

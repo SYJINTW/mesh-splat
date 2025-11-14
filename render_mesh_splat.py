@@ -14,9 +14,12 @@ from scene import Scene
 import os
 from tqdm import tqdm
 from os import makedirs
+from pathlib import Path
+from PIL import Image
+import torchvision
+import torchvision.transforms as T
 # from renderer.gaussian_renderer import render
 from renderer.mesh_splat_renderer import render # [YC] change to mesh_splat_renderer
-import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
@@ -35,7 +38,8 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                 occlusion: bool = False,
                 policy_path : str = None,
                 mesh_type : str = "colmap",
-                textured_mesh = None
+                textured_mesh = None,
+                precaptured_mesh_img_path : str = None
                 # <<<< [YC] add
                 ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_{gs_type}")
@@ -44,14 +48,23 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
     
-    
-    #  [DONE] port loading logic from train.py to here too
-
-    
-    
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        # rendering = render(view, gaussians, pipeline, background)["render"]
+        # Load precaptured mesh background and depth if available
+        bg = None
+        bg_depth = None
         
+        if precaptured_mesh_img_path:
+            cached_bg_path = Path(precaptured_mesh_img_path) / "mesh_texture" / f"{view.image_name}.png"
+            cached_bg_depth_path = Path(precaptured_mesh_img_path) / "mesh_depth" / f"{view.image_name}.pt"
+            
+            if cached_bg_path.exists():
+                img = Image.open(cached_bg_path).convert("RGB")
+                img = img.resize((view.image_width, view.image_height), Image.BILINEAR)
+                transform = T.Compose([T.ToTensor()])
+                bg = transform(img).to(torch.float32).cuda() # [0, 255] → [0.0, 1.0], shape (3, H, W)
+                
+            if cached_bg_depth_path.exists():
+                bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
         
         # [DONE] add pure GS renderer back here
         if gs_type == "gs":
@@ -69,7 +82,7 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             # [NOTE] ensure that during rendering we use the same rasterizer as in training
             if occlusion:
                 rendering = render(view, gaussians, pipeline, 
-                                bg_color=None, bg_depth=None,
+                                bg_color=bg, bg_depth=bg_depth,
                                 textured_mesh=textured_mesh,
                                 mesh_background_color=background)["render"] # [YC] using different rasterizer
                 print("\033[92m [INFO] Render::DTGS using Depth+Texture+GS rasterizer for gs_mesh\033[0m")
@@ -77,7 +90,7 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             else: 
                 pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
                 rendering = render(view, gaussians, pipeline, 
-                                bg_color=None, bg_depth=pure_bg_depth,
+                                bg_color=bg, bg_depth=pure_bg_depth,
                                 textured_mesh=textured_mesh,
                                 mesh_background_color=background)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
                 print("\033[96m [INFO] Render::TGS using Texture+GS rasterizer for gs_mesh\033[0m")
@@ -91,7 +104,8 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
                 # >>>> [YC] add
                 texture_obj_path : str = None,
                 occlusion: bool = False,
-                policy_path : str = None
+                policy_path : str = None,
+                precaptured_mesh_img_path : str = None
                 # <<<< [YC] add
                 ):
     with torch.no_grad():
@@ -134,7 +148,8 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
             'texture_obj_path': texture_obj_path,
             'occlusion': occlusion,
             'policy_path': policy_path,
-            'textured_mesh': scene.textured_mesh
+            'textured_mesh': scene.textured_mesh,
+            'precaptured_mesh_img_path': precaptured_mesh_img_path
         }
 
         if not skip_train:
@@ -163,6 +178,9 @@ if __name__ == "__main__":
     parser.add_argument("--texture_obj_path", type=str, default=None, help="Path to the textured obj file for mesh-based datasets.")
     parser.add_argument("--occlusion", action="store_true", help="Whether to use occlusion handling during rendering.")
     parser.add_argument("--policy_path", type=str, default="", help="Path to the splat density policy npy file.")
+    parser.add_argument("--precaptured_mesh_img_path", type=str, default="",
+        help="path to the directory containing precaptured mesh (RGB & D) images for background. \
+            should contain mesh_texture/ and mesh_depth/ sub-folders.")
     # <<<< [YC] add
     
     # >>>> [Sam] add
@@ -196,6 +214,7 @@ if __name__ == "__main__":
                 # >>>> [YC] add
                 texture_obj_path=args.texture_obj_path,
                 occlusion=args.occlusion,
-                policy_path=args.policy_path
+                policy_path=args.policy_path,
+                precaptured_mesh_img_path=args.precaptured_mesh_img_path
                 # <<<< [YC] add
                 )
