@@ -502,7 +502,8 @@ def load_textured_mesh(dataset, texture_obj_path: str) -> Meshes:
             assert texture_obj_path.lower().endswith(".obj"), "[ERROR] SuGaR mesh should be .obj file!"
             textured_mesh = load_objs_as_meshes([texture_obj_path]).to("cuda")
              
-        elif mesh_type == "colmap": # From Colmap, download from https://nerfbaselines.github.io/
+        elif mesh_type == "colmap" or mesh_type == "milo": 
+            # From Colmap, download from https://nerfbaselines.github.io/
             assert texture_obj_path.lower().endswith(".ply"), "[ERROR] Colmap mesh should be .ply file!"
             mesh_tm = trimesh.load(texture_obj_path, force='mesh', process=False)
             verts = torch.tensor(mesh_tm.vertices, dtype=torch.float32)
@@ -589,47 +590,6 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         torch.cuda.empty_cache()
 
 
-def load_with_white_bg(path):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  
-    # keep alpha if present
-    # shape: [H,W,3] or [H,W,4]
-
-    if img.shape[2] == 4:  # RGBA
-        rgb = img[:, :, :3].astype(np.float32) / 255.0
-        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
-        white_bg = np.ones_like(rgb)
-        img_out = rgb * alpha + white_bg * (1 - alpha)
-    else:
-        img_out = img[:, :, :3].astype(np.float32) / 255.0
-
-    # Convert BGR to RGB because OpenCV loads in BGR order
-    img_out = img_out[:, :, ::-1]
-    return img_out
-
-def load_image_with_background_compositing(path, image_height=800, image_width=800, white_background=True):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # keep alpha if present
-    # shape: [H,W,3] or [H,W,4]
-
-    # Resize if dimensions don't match
-    if img.shape[0] != image_height or img.shape[1] != image_width:
-        img = cv2.resize(img, (image_width, image_height), interpolation=cv2.INTER_LINEAR)
-
-    if img.shape[2] == 4:  # RGBA
-        rgb = img[:, :, :3].astype(np.float32) / 255.0
-        alpha = img[:, :, 3:].astype(np.float32) / 255.0  # shape [H,W,1]
-        
-        # Choose background based on flag, black or white
-        bg_color = 1.0 if white_background else 0.0
-        bg = np.full_like(rgb, bg_color)
-        
-        img_out = rgb * alpha + bg * (1 - alpha)
-    else:
-        img_out = img[:, :, :3].astype(np.float32) / 255.0
-
-    # Convert BGR to RGB because OpenCV loads in BGR order
-    img_out = img_out[:, :, ::-1]
-    return img_out
-
 
 
 if __name__ == "__main__":
@@ -685,7 +645,7 @@ if __name__ == "__main__":
     lp.budget_per_tri = args.budget_per_tri
     lp.alloc_policy = args.alloc_policy 
     lp.warmup_only = args.warmup_only
-    lp.mesh_type = args.mesh_type
+    lp.mesh_type = args.mesh_type.lower()
     # <<<< [Sam] add
 
     op = optimizationParamTypeCallbacks[args.gs_type](parser)

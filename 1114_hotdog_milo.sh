@@ -21,12 +21,12 @@ WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
 
 ITERATION="7000"
 
-EXP_NAME="1113_downsampled"
+EXP_NAME="1114_milo"
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
-MESH_TYPE="milo" # "milo", "sugar" or "colmap"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply"
+MESH_TYPE="milo" # "sugar" or "colmap" or "milo"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/hotdog.ply"
 
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
@@ -71,8 +71,8 @@ FAILED_LOG="${BASE_OUTPUT_DIR}/failed_experiments.log"
 # ======= Main Loop ======
 # for scene_name in "${SCENE_NAMES[@]}"; do
 for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
-    for budget in "${BUDGETS[@]}"; do
-        for policy in "${POLICIES[@]}"; do
+    for policy in "${POLICIES[@]}"; do
+        for budget in "${BUDGETS[@]}"; do
 
             occlusion_tag="no_occlusion"
             if [ "$IS_OCCLUSION" == "--occlusion" ]; then
@@ -179,33 +179,42 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
             fi
 
             # ======= Step 2: Render ======
-            if [ "$exp_status" = "TRAIN_SUCCESS" ]; then
-                echo "Step 2/3: Running render..." | tee -a "$LOG_FILE"
-                render_start=$(date +%s)
-                if python render_mesh_splat.py \
-                    -m "$SAVE_DIR" \
-                    --gs_type gs_mesh \
-                    --skip_train \
-                    $IS_OCCLUSION \
-                    --total_splats "$budget" \
-                    --alloc_policy "$policy" \
-                    --texture_obj_path "$MESH_FILE" \
-                    --mesh_type "$MESH_TYPE" \
-                    $RESOLUTION \
-                    $IS_WHITE_BG \
-                    --policy_path "$POLICY_CACHED" >> "$LOG_FILE" ; then
+            render_success=true
+            for iter in 1000 2000 3000 4000 5000 6000 7000; do
+                if [ "$exp_status" = "TRAIN_SUCCESS" ]; then
+                    echo "Step 2/3: Running render (iteration ${iter})..." | tee -a "$LOG_FILE"
+                    render_start=$(date +%s)
+                    if python render_mesh_splat.py \
+                        -m "$SAVE_DIR" \
+                        --gs_type gs_mesh \
+                        --skip_train \
+                        $IS_OCCLUSION \
+                        --total_splats "$budget" \
+                        --alloc_policy "$policy" \
+                        --texture_obj_path "$MESH_FILE" \
+                        --mesh_type "$MESH_TYPE" \
+                        $RESOLUTION \
+                        $IS_WHITE_BG \
+                        --policy_path "$POLICY_CACHED" \
+                        --iteration "$iter" >> "$LOG_FILE" ; then
 
-                    render_end=$(date +%s)
-                    render_secs=$((render_end - render_start))
-                    echo "Render completed in $(fmt_time $render_secs) (${render_secs}s)." | tee -a "$LOG_FILE"
-                    exp_status="RENDER_SUCCESS"
-                else
-                    render_end=$(date +%s)
-                    render_secs=$((render_end - render_start))
-                    exp_status="RENDER_FAILED"
-                    failed_experiments=$((failed_experiments + 1))
-                    echo "ERROR: Render failed for policy=${policy}, budget=${budget}, occlusion=${occlusion_tag} after ${render_secs}s." | tee -a "$LOG_FILE" "$FAILED_LOG"
+                        render_end=$(date +%s)
+                        render_secs=$((render_end - render_start))
+                        echo "Render (iter ${iter}) completed in $(fmt_time $render_secs) (${render_secs}s)." | tee -a "$LOG_FILE"
+                    else
+                        render_end=$(date +%s)
+                        render_secs=$((render_end - render_start))
+                        render_success=false
+                        failed_experiments=$((failed_experiments + 1))
+                        echo "ERROR: Render failed for policy=${policy}, budget=${budget}, occlusion=${occlusion_tag}, iter=${iter} after ${render_secs}s." | tee -a "$LOG_FILE" "$FAILED_LOG"
+                    fi
                 fi
+            done
+            
+            if [ "$render_success" = true ]; then
+                exp_status="RENDER_SUCCESS"
+            else
+                exp_status="RENDER_FAILED"
             fi
 
             # ======= Step 3: Metrics ======

@@ -8,7 +8,7 @@
 
 
 # === [CONFIGS] ===========================
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=3
 
 # [TODO] make the pipeline support BUDGET=0 (mesh only) case
 # BUDGET=(2000000) # arbitrary budget 
@@ -16,18 +16,24 @@ UNIT_BUDGET=1.6 # budget proportional to number of triangles
 
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("planarity") # choose one from above
+POLICY=("distortion") # choose one from above
 
 
-DATASET_DIR="/mnt/data1/samk/NEU/dataset/bicycle" 
+SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
+DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
+MESH_TYPE="milo" # "sugar" or "colmap" or "milo"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/downsample_50/mesh.ply"
 
-SCENE_NAME="bicycle" # or other NeRF scene name
-MESH_TYPE="colmap" # "sugar" or "colmap"
 
-### downsampled mesh (to 10%, 30%)
-# SCENE_NAME="bicycle_ds_10"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
-# MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
+
+
+# DATASET_DIR="/mnt/data1/samk/NEU/dataset/bicycle" 
+
+# SCENE_NAME="bicycle" # or other NeRF scene name
+# MESH_TYPE="colmap" # "sugar" or "colmap"
+# # SCENE_NAME="bicycle_ds_10"
+# MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_10/mesh.ply"
+# # MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/bicycle/downsampled_30/mesh.ply"
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
 
