@@ -312,6 +312,15 @@ def readColmapSingleMeshSceneInfo(
             tri_indices_list.append(torch.full((n,), i, dtype=torch.long))
         # <<<< [SAM]
         
+        # [DEBUG] Check if xyz_list is populated
+        print(f"[DEBUG] xyz_list length: {len(xyz_list)}")
+        if len(xyz_list) == 0:
+            print("[ERROR] xyz_list is empty! No points were generated from triangles.")
+            print(f"[DEBUG] triangles shape: {triangles.shape}")
+            print(f"[DEBUG] num_pts_each_triangle: {num_splats_per_triangle}")
+            raise RuntimeError("Failed to generate random points inside triangles")
+        
+        
         xyz = torch.cat(xyz_list, dim=0)
         xyz = xyz.reshape(num_pts, 3)
         
