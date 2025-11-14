@@ -25,29 +25,38 @@ def transform_vertices_function(vertices, c=1):
 def render(viewpoint_camera, pc : GaussianModel, pipe, 
            bg_color: torch.Tensor = None, bg_depth: torch.Tensor = None,
            scaling_modifier = 1.0, override_color = None,
+           background_color=(1.0, 1.0, 1.0), # [TODO] [DOING] enable black background
            textured_mesh = None):
     """
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
     """
+    
+    print(f"[DEBUG][DEBUG] bg_color: {bg_color}")
     # Using textured mesh for color
     if bg_color is not None and bg_depth is not None:
         pass  # Both bg_color and bg_depth are provided, no need to render textured mesh
     elif bg_color is None and bg_depth is not None and textured_mesh is not None:
         bg_color, _, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
                                                 image_height=viewpoint_camera.image_height,
-                                                image_width=viewpoint_camera.image_width)
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=background_color
+                                                )
     # Using textured mesh for depth
     elif bg_color is not None and bg_depth is None and textured_mesh is not None:
         _, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
                                                 image_height=viewpoint_camera.image_height,
-                                                image_width=viewpoint_camera.image_width)
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=background_color
+                                                )
     # Using textured mesh for both color and depth
     elif bg_color is None and bg_depth is None and textured_mesh is not None:
         bg_color, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
                                                 image_height=viewpoint_camera.image_height,
-                                                image_width=viewpoint_camera.image_width)
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=background_color
+                                                )
     else:
         raise ValueError("At least one of bg_color, bg_depth, or textured_mesh must be provided.")
                

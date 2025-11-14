@@ -11,22 +11,22 @@ export CUDA_VISIBLE_DEVICES=2
 
 # in decreasing order
 # 0 means only mesh, no splats
-BUDGETS=(1 3000000 2000000 1000000 524288 262144 131072 ) 
+BUDGETS=(148783 70000 30000 1) 
 
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
-POLICIES=("planarity" "area" "distortion" "uniform" "random")
+POLICIES=("area" "distortion" "uniform" "planarity" )
 
-WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
+WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
 ITERATION="7000"
 
-EXP_NAME="1113_downsampled"
+EXP_NAME="1114_hotdog_colmap"
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
 MESH_TYPE="colmap" # "sugar" or "colmap"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/colmap/hotdog/checkpoint/mesh.ply"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}/colmap_mesh/mesh.ply"
 
 
 MESH_IMG_DIR=$(dirname "$MESH_FILE")
@@ -71,8 +71,8 @@ FAILED_LOG="${BASE_OUTPUT_DIR}/failed_experiments.log"
 # ======= Main Loop ======
 # for scene_name in "${SCENE_NAMES[@]}"; do
 for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
-    for budget in "${BUDGETS[@]}"; do
-        for policy in "${POLICIES[@]}"; do
+    for policy in "${POLICIES[@]}"; do
+        for budget in "${BUDGETS[@]}"; do
 
             occlusion_tag="no_occlusion"
             if [ "$IS_OCCLUSION" == "--occlusion" ]; then

@@ -76,7 +76,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 
-# [TODO] loss-informed stop criteria
+# [good to have] loss-informed stop criteria
 LOSS_CONVG_THRESH = 0.01
 
 
@@ -146,10 +146,17 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 print(f"\t[INFO] Skipping {cam.image_name}, already exists.")
                 continue
             
+            
+            # [DONE] fix black background issue in precapture stage
+            # didn't pass bg=[0,0,0] into the mesh_renderer_pytorch3d()
             # Render background and depth
+            
+            bg_color = (1,1,1) if dataset.white_background else (0,0,0)
             render_pkg = render(cam, gaussians, pipe, 
                                 bg_color=None, bg_depth=None, 
-                                textured_mesh=scene.textured_mesh)
+                                textured_mesh=scene.textured_mesh,
+                                background_color=bg_color
+                                )
             
             # Save background image
             bg_image = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
@@ -424,7 +431,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
                 progress_bar.close()
 
             # Log and save
-            # [TODO] enable training report to observe loss and metrics during training
+            # [good to have] enable training report to observe loss and metrics during training
             # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
             #                 testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
@@ -636,9 +643,9 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     # parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[3_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[3_000, 7_000]) # not used
     # parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 30_000, 60_000, 90_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[3_000, 7_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)

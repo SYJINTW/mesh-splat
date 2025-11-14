@@ -11,12 +11,12 @@ export CUDA_VISIBLE_DEVICES=2
 
 # in decreasing order
 # 0 means only mesh, no splats
-BUDGETS=(1 3000000) 
+BUDGETS=(148783 70000 30000 1) 
 
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
-POLICIES=("planarity" "area" "distortion" "uniform" "random")
+POLICIES=("planarity" "area" "distortion" "uniform")
 
-WHETHER_OCCLUSION=("--occlusion" "") # sanity check in the logfile
+WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
 ITERATION="7000"
