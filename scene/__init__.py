@@ -117,9 +117,25 @@ class Scene:
             assert False, "Could not recognize scene type!"
             
         
+        # [DONE] fix the weird copying issue, budget_per_tri and total_splats behavior 
         # save a copy of allocation result into output dir
-        computed_policy_path = os.path.join(args.source_path, f"policy/{args.alloc_policy}_{args.total_splats}.npy")
-        copy_dest = os.path.join(self.model_path, f"{args.alloc_policy}_{args.total_splats}.npy")
+        
+        num_tri = scene_info.point_cloud.triangles.shape[0] if hasattr(scene_info.point_cloud, 'triangles') else 0
+        
+        
+        assert (args.budget_per_tri is not None) or (args.total_splats is not None), "Either num_splats or total_splats must be provided for budgeting!"
+        
+        if args.total_splats is None: 
+            total_splats = int(args.budget_per_tri * num_tri)
+        else:
+            total_splats = args.total_splats
+        
+        print(f"[INFO] Scene:: total_splats for budgeting policy copy: {total_splats}")
+        computed_policy_path = os.path.join(
+            args.source_path, 
+            f"policy/mesh_{args.mesh_type}/tri_{num_tri}/{args.alloc_policy}/{total_splats}.npy"
+        )
+        copy_dest = os.path.join(self.model_path, f"{args.alloc_policy}_{total_splats}.npy")
         print(f"[INFO] Copying computed budgeting policy from {computed_policy_path} to {copy_dest}")
         if os.path.exists(computed_policy_path):
             with open(computed_policy_path, 'rb') as src_file, open(copy_dest , 'wb') as dest_file:

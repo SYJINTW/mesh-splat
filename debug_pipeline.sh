@@ -10,10 +10,10 @@
 # === [CONFIGS] ===========================
 export CUDA_VISIBLE_DEVICES=2
 
-# BUDGET=(2000000) # arbitrary budget 
-UNIT_BUDGET=1.5 # budget proportional to number of triangles
-
 # [TODO] make the pipeline support BUDGET=0 (mesh only) case
+# BUDGET=(2000000) # arbitrary budget 
+UNIT_BUDGET=1.6 # budget proportional to number of triangles
+
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
 POLICY=("planarity") # choose one from above
@@ -77,7 +77,8 @@ echo > "$LOG_FILE" # clear log file
     --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration 10
+    --iteration 10 \
+    2>&1
 } | tee -a "$LOG_FILE"
 
 
@@ -98,11 +99,8 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration 10
-
-
-
-
+    --iteration 10 \
+    2>&1
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"
 
@@ -122,6 +120,7 @@ python render_mesh_splat.py \
     $RESOLUTION \
     $IS_WHITE_BG \
     --policy_path "$POLICY_CACHED" \
+    2>&1
 
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"
@@ -133,7 +132,8 @@ echo "Step 3/3: Metrics computation"
 
 python metrics.py \
     -m "$SAVE_DIR" \
-    --gs_type gs_mesh
+    --gs_type gs_mesh \
+    2>&1
 } | tee -a "$LOG_FILE"
 
 
