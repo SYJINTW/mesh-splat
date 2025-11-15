@@ -5,7 +5,7 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
 # ======= Config ======
 
@@ -21,7 +21,7 @@ WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 
 ITERATION="15000"
 
-EXP_NAME="1114_lego_milo"
+EXP_NAME="1115_lego_milo"
 
 SCENE_NAME="lego" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
@@ -180,7 +180,7 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
 
             # ======= Step 2: Render ======
             render_success=true
-            for iter in 1000 2000 3000 4000 5000 6000 7000; do
+            for iter in 1000 2000 3000 4000 5000 6000 7000 10000 12000 15000; do
                 if [ "$exp_status" = "TRAIN_SUCCESS" ]; then
                     echo "Step 2/3: Running render (iteration ${iter})..." | tee -a "$LOG_FILE"
                     render_start=$(date +%s)

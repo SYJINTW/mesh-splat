@@ -139,7 +139,7 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
         
         print("[INFO] Warmup stage: Generating precaptured mesh background and depth images...")
         
-        for cam in tqdm(scene.getTrainCameras(), desc="Precapturing backgrounds", unit="camera"):
+        for cam in tqdm(scene.getTrainCameras(), desc="Precapturing training backgrounds", unit="camera"):
             # Generate file paths
             bg_save_path = precaptured_bg_dir / f"{cam.image_name}.png"
             depth_save_path = precaptured_depth_dir / f"{cam.image_name}.pt"
@@ -170,7 +170,47 @@ def training(gs_type, dataset, opt, pipe, testing_iterations, saving_iterations,
             bg_depth = render_pkg["bg_depth"].detach().cpu()
             torch.save(bg_depth, depth_save_path)
             
-            print(f"[INFO] Saved precaptured results for {cam.image_name}")
+            print(f"[INFO] Saved precaptured results for [training] {cam.image_name}")
+        
+        
+        precaptured_test_bg_dir = Path(precaptured_mesh_img_path) / "test_mesh_texture"
+        precaptured_test_depth_dir = Path(precaptured_mesh_img_path) / "test_mesh_depth"
+        
+        precaptured_test_bg_dir.mkdir(parents=True, exist_ok=True)
+        precaptured_test_depth_dir.mkdir(parents=True, exist_ok=True)
+        
+        for cam in tqdm(scene.getTestCameras(), desc="Precapturing test backgrounds", unit="camera"):
+            bg_save_path = precaptured_test_bg_dir / f"{cam.image_name}.png"
+            depth_save_path = precaptured_test_depth_dir / f"{cam.image_name}.pt"
+            
+            # Skip if already exists
+            if bg_save_path.exists() and depth_save_path.exists():
+                print(f"\t[INFO] Skipping {cam.image_name}, already exists.")
+                continue
+            
+            
+            # [DONE] fix black background issue in precapture stage
+            # didn't pass bg=[0,0,0] into the mesh_renderer_pytorch3d()
+            # Render background and depth
+            
+            bg_color = (1,1,1) if dataset.white_background else (0,0,0)
+            render_pkg = render(cam, gaussians, pipe, 
+                                bg_color=None, bg_depth=None, 
+                                textured_mesh=scene.textured_mesh,
+                                mesh_background_color=bg_color
+                                )
+            
+            # Save background image
+            bg_image = render_pkg["bg_color"].detach().clamp(0, 1).cpu()
+            bg_image_pil = TF.to_pil_image(bg_image)
+            bg_image_pil.save(bg_save_path)
+            
+            # Save depth image
+            bg_depth = render_pkg["bg_depth"].detach().cpu()
+            torch.save(bg_depth, depth_save_path)
+            
+            print(f"[INFO] Saved precaptured results for [testing] {cam.image_name}")
+        
         
         print("[INFO] Warmup stage complete. Exiting...")
         exit()

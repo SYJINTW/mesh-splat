@@ -5,7 +5,7 @@
 
 # [NOTE] copy and modify this script for your own experiments
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 # ======= Config ======
 
@@ -21,7 +21,7 @@ WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 
 ITERATION="15000"
 
-EXP_NAME="1115_milo"
+EXP_NAME="1115_hotdog_milo"
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
@@ -193,7 +193,6 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                         --alloc_policy "$policy" \
                         --texture_obj_path "$MESH_FILE" \
                         --mesh_type "$MESH_TYPE" \
-                        --precaptured_mesh_img_path "$MESH_IMG_DIR" \
                         $RESOLUTION \
                         $IS_WHITE_BG \
                         --policy_path "$POLICY_CACHED" \
