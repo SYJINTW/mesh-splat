@@ -78,7 +78,12 @@ def evaluate(gs_type, model_paths):
                 for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
                     ssims.append(ssim(renders[idx], gts[idx]))
                     psnrs.append(psnr(renders[idx], gts[idx]))
-                    lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+                    
+                    # [NOTE] skip LPIPS to save time for now
+                    # lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+                    lpipss.append(-1.0)
+                    
+                    
 
                 print("  SSIM : {:>12.7f}".format(torch.tensor(ssims).mean(), ".5"))
                 print("  PSNR : {:>12.7f}".format(torch.tensor(psnrs).mean(), ".5"))
@@ -96,6 +101,8 @@ def evaluate(gs_type, model_paths):
                 json.dump(full_dict[scene_dir], fp, indent=True)
             with open(scene_dir + f"/per_view_{gs_type}.json", 'w') as fp:
                 json.dump(per_view_dict[scene_dir], fp, indent=True)
+                
+            print(f"[INFO] Saved results to {scene_dir}/results_{gs_type}.json and per_view_{gs_type}.json")
         #except:
         #    print("Unable to compute metrics for model", scene_dir)
 

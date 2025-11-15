@@ -3,9 +3,11 @@
 
 # === [ORIGINAL GS SCRIPT] ===========================
 
+# run shell_script/rename_gs_dir.sh to get proper folder structure
+
 
 # === [CONFIGS] ===========================
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=3
 
 
 
@@ -23,7 +25,7 @@ RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
 
 DATE_TODAY=$(date +"%m%d")
-SAVE_DIR="output/_DEBUG_${DATE_TODAY}/${SCENE_NAME}_GS_pure"
+SAVE_DIR="output/hotdog_gs"
 # POLICY_CACHED="${SAVE_DIR}/${POLICY}_${UNIT_BUDGET}.npy"
 LOG_FILE="pipeline-${DATE_TODAY}.log"
 
@@ -47,49 +49,10 @@ echo > "$LOG_FILE" # clear log file
 } | tee -a "$LOG_FILE"
 
 
-# {
-#     echo "Step 0/3: Warm Up"
-#     python train.py --eval \
-#     --warmup_only \
-#     -s "$DATASET_DIR" \
-#     -m "$SAVE_DIR" \
-#     --texture_obj_path "$MESH_FILE" \
-#     --mesh_type "$MESH_TYPE" \
-#     --debugging \
-#     --occlusion \
-#     --budget_per_tri "$UNIT_BUDGET" \
-#     --alloc_policy "$POLICY" \
-#     --gs_type gs_mesh \
-#     --policy_path "$POLICY_CACHED" \
-#     --precaptured_mesh_img_path "$MESH_IMG_DIR" \
-#     $IS_WHITE_BG \
-#     $RESOLUTION \
-#     --iteration 10 \
-#     2>&1
-# } | tee -a "$LOG_FILE"
-
-
-
-{
-    echo "Step 1/3: Training"
-    python train.py --eval \
-    -s "$DATASET_DIR" \
-    -m "$SAVE_DIR" \
-    --debugging \
-    --debug_freq 10 \
-    --gs_type gs \
-    $IS_WHITE_BG \
-    $RESOLUTION \
-    --iteration $ITERATION \
-    2>&1
-    # --budget_per_tri "$UNIT_BUDGET" \
-} | tee -a "$LOG_FILE"
-
-
 
 {
 echo "Step 2/3: Rendering with the trained model"
-python render_mesh_splat.py \
+python render_gs.py \
     -m "$SAVE_DIR" \
     --gs_type gs \
     --skip_train \

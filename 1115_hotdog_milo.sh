@@ -19,9 +19,9 @@ POLICIES=("area" "distortion" "uniform" "planarity" )
 WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
-ITERATION="7000"
+ITERATION="15000"
 
-EXP_NAME="1114_milo"
+EXP_NAME="1115_milo"
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 

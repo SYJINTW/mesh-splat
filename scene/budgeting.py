@@ -80,10 +80,14 @@ class BudgetingPolicy(ABC):
         pass
 
 
+# [TODO] implement this
 class MixedBudgetingPolicy(BudgetingPolicy):
     # 2D loss (distortion) map + 3D geometric property (e.g. mesh geometry)
     weight_distortion: float = 0.5 # hyperparameter to be tuned empirically
     weight_geometry: float = 1.0 - weight_distortion
+    
+    # use area or planarity, whichever
+    
     pass
 
 
@@ -786,6 +790,8 @@ class DistortionMapBudgetingPolicy(BudgetingPolicy):
                 mean_dist = torch.zeros(num_faces, dtype=torch.float32, device=self.device)
                 mask = count > 0
                 
+                
+                # [TODO] try both sum and mean strategies
                 if self.is_averaging_across_views:
                     
                     mean_dist[mask] = sum_dist[mask] / count[mask]

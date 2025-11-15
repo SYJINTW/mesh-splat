@@ -11,7 +11,7 @@ export CUDA_VISIBLE_DEVICES=2
 
 # in decreasing order
 # 0 means only mesh, no splats
-BUDGETS=(313547 1 150000 750000) 
+BUDGETS=(313547 1 150000 75000) 
 
 # POLICIES=("uniform" "random" "area" "planarity" "distortion")
 POLICIES=("area" "distortion" "uniform" "planarity" )
@@ -19,7 +19,7 @@ POLICIES=("area" "distortion" "uniform" "planarity" )
 WHETHER_OCCLUSION=("--occlusion") # sanity check in the logfile
 # [TODO] also check pure GS training results
 
-ITERATION="7000"
+ITERATION="15000"
 
 EXP_NAME="1114_lego_milo"
 
