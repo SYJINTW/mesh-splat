@@ -157,6 +157,7 @@ class Scene:
                     dest_file.write(src_file.read())
             json_cams = []
             json_train_cams = []
+            json_test_cams = []
             camlist = []
             train_camlist = []
             if scene_info.test_cameras:
@@ -168,10 +169,15 @@ class Scene:
                 json_cams.append(camera_to_JSON(id, cam))
             for id, cam in enumerate(train_camlist):
                 json_train_cams.append(camera_to_JSON(id, cam))
+            for id, cam in enumerate(scene_info.test_cameras):
+                json_test_cams.append(camera_to_JSON(id, cam))
             with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
                 json.dump(json_cams, file)
             with open(os.path.join(self.model_path, "train_cameras.json"), 'w') as file:
                 json.dump(json_train_cams, file)
+            with open(os.path.join(self.model_path, "test_cameras.json"), 'w') as file:
+                json.dump(json_test_cams, file)
+            
                 
         # if shuffle:
         #     print("shuffle") # [YC] debug

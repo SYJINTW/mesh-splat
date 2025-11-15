@@ -193,6 +193,7 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
                         --alloc_policy "$policy" \
                         --texture_obj_path "$MESH_FILE" \
                         --mesh_type "$MESH_TYPE" \
+                        --precaptured_mesh_img_path "$MESH_IMG_DIR" \
                         $RESOLUTION \
                         $IS_WHITE_BG \
                         --policy_path "$POLICY_CACHED" \
