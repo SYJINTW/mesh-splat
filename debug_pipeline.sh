@@ -8,15 +8,15 @@
 
 
 # === [CONFIGS] ===========================
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 
 # [TODO] make the pipeline support BUDGET=0 (mesh only) case
 # BUDGET=(2000000) # arbitrary budget 
-UNIT_BUDGET=1.6 # budget proportional to number of triangles
+UNIT_BUDGET=0.3 # budget proportional to number of triangles
 
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("distortion") # choose one from above
+POLICY=("uniform") # choose one from above
 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed

@@ -109,16 +109,22 @@ class UniformBudgetingPolicy(BudgetingPolicy):
     def __init__(self, mesh=None, **kwargs):
         super().__init__(mesh, **kwargs)
     
+    
+    # [NEW] don't override
+    
     # only this baseline policy overrides allocate() method
-    def allocate(
-        self,
-        total_splats: int,
-    ) -> np.ndarray:
-        num_triangles = self.num_triangles
-        uniform_alloc = total_splats // num_triangles
-        print(f"[INFO] Budget::UniformBudgetingPolicy allocating {uniform_alloc} splats per triangle.")
+    # def allocate(
+    #     self,
+    #     total_splats: int,
+    # ) -> np.ndarray:
+    #     num_triangles = self.num_triangles
+    #     uniform_alloc = total_splats // num_triangles
+    #     print(f"[INFO] Budget::UniformBudgetingPolicy allocating {uniform_alloc} splats per triangle.")
         
-        return np.full((num_triangles,), uniform_alloc, dtype=np.int32)
+    #     return np.full((num_triangles,), uniform_alloc, dtype=np.int32)
+
+
+
 
 class RandomUniformBudgetingPolicy(BudgetingPolicy):
     """
@@ -255,7 +261,7 @@ def _bounded_proportional_allocate(
     remainder = fractional_parts - int_alloc
     
     # Use sorting to give splats to those with the largest remainder
-    indices_to_add = np.argsort(-remainder) # Sort descending
+    indices_to_add = np.argsort(-remainder, kind="stable") # Sort descending, stable
 
     for i in range(budget_to_distribute):
         idx = indices_to_add[i % N] # Cycle through if needed, though unlikely
@@ -348,7 +354,7 @@ def _unbounded_proportional_allocate(
     # the remainder one by one based on largest fractional part
     budget_to_distribute = total - alloc.sum()
     remainder = fractional_parts - int_alloc
-    indices_to_add = np.argsort(-remainder) # Sort descending
+    indices_to_add = np.argsort(-remainder, kind="stable") # Sort descending
     for i in range(budget_to_distribute):
         idx = indices_to_add[i % N] # Cycle through if needed, though unlikely
         alloc[idx] += 1
