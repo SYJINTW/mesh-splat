@@ -44,11 +44,20 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                 ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_{gs_type}")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+    debug_path = os.path.join(model_path, name, "ours_{}".format(iteration), "debug") # [YC] add for debug images
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    makedirs(debug_path, exist_ok=True) # [YC] add for debug images
     
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+        # >>>> [YC] add for debug images
+        if idx % 10 == 0:
+            debug_flag = True
+        else:
+            debug_flag = False
+        # <<<< [YC] add for debug images
+        
         # Load precaptured mesh background and depth if available
         bg = None
         bg_depth = None
@@ -62,7 +71,10 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                 img = img.resize((view.image_width, view.image_height), Image.BILINEAR)
                 transform = T.Compose([T.ToTensor()])
                 bg = transform(img).to(torch.float32).cuda() # [0, 255] → [0.0, 1.0], shape (3, H, W)
-                
+                # >>>> [YC] add for debug images
+                if debug_flag:
+                    torchvision.utils.save_image(bg, os.path.join(debug_path, '{0:05d}_bg'.format(idx) + ".png"))
+                # <<<< [YC] add for debug images
             if cached_bg_depth_path.exists():
                 bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
         
@@ -94,11 +106,29 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                                 textured_mesh=textured_mesh,
                                 mesh_background_color=background)["render"] # [YC] no occlusion handling, always use pure bg and pure depth
                 print("\033[96m [INFO] Render::TGS using Texture+GS rasterizer for gs_mesh\033[0m")
-                
+            
+            # >>>> [YC] add for debug images
+            if debug_flag:
+                # save pure gaussian
+                _pure_bg_template = background
+                _pure_bg = torch.tensor(_pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+                _pure_bg = _pure_bg.expand(3, view.image_height, view.image_width)
+                _pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
+                _rendering = render(view, gaussians, pipeline, 
+                            bg_color=_pure_bg, bg_depth=_pure_bg_depth)["render"]
+                torchvision.utils.save_image(_rendering, os.path.join(debug_path, '{0:05d}_pure_gs'.format(idx) + ".png"))
+            # <<<< [YC] add for debug images
+            
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-
+        
+        # >>>> [YC] add for debug images
+        if debug_flag:
+            torchvision.utils.save_image(rendering, os.path.join(debug_path, '{0:05d}_rendering'.format(idx) + ".png"))
+            torchvision.utils.save_image(gt, os.path.join(debug_path, '{0:05d}_gt'.format(idx) + ".png"))
+        # <<<< [YC] add for debug images
+        
 # sets are {train,test, (val)}
 def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool,
                 # >>>> [YC] add
