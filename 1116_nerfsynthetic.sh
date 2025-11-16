@@ -234,9 +234,11 @@ for IS_OCCLUSION in "${WHETHER_OCCLUSION[@]}"; do
 
                     # Copy results JSON for plotting
                     RESULTS_JSON="${SAVE_DIR}/results_gs_mesh.json"
+                    PER_VIEW_JSON="${SAVE_DIR}/per_view_gs_mesh.json"
                     PLOT_JSON="${PLOT_DIR}/${policy}_${budget}_${occlusion_tag}.json"
-
+                    # Also copy the per-view JSON
                     if [ -f "$RESULTS_JSON" ]; then
+                        cp "$PER_VIEW_JSON" "${PLOT_DIR}/per_view_${policy}_${budget}_${occlusion_tag}.json"
                         cp "$RESULTS_JSON" "$PLOT_JSON"
                         echo "Results copied to: $PLOT_JSON" | tee -a "$LOG_FILE"
                     else
