@@ -334,6 +334,7 @@ class MixedBudgetingPolicy(BudgetingPolicy):
     
     Final weights = weight_geometry * area_weights + weight_visual * distortion_weights,
     where weight_geometry + weight_visual = 1.0 
+    namely, a convex combination.
     """
     
     def __init__(self, mesh: trimesh.Trimesh, 
