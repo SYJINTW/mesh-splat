@@ -263,16 +263,16 @@ def _unbounded_proportional_allocate(
     
     # Normalize weights to prevent very large numbers, ensure they are positive
     w_sum = np.sum(weights)
-    if w_sum > 0:
-        norm_weights = weights / w_sum
-        # [TODO] could try other normalization strategies
-        # e.g. exponential, logarithmic, etc.
-    else:
-        # If all weights are zero, fallback to uniform weights
-        norm_weights = np.ones(N, dtype=np.float32) / N
-        print("[WARNING] sum of all weights are zero; distributing uniformly.")
+    
+    assert w_sum > 0, \
+        f"[ERROR] Sum of weights must be positive for unbounded proportional allocation, got {w_sum}."
 
-    print(f"[DEBUG] Weights stats - min: {weights.min():.4f}, max: {weights.max():.4f}, mean: {weights.mean():.4f}, stdv: {weights.std():.4f}")
+    norm_weights = weights / w_sum
+    # [TODO] could try other normalization strategies
+    # e.g. exponential, logarithmic, Z-score, Linear (min-max) etc.
+
+    print(f"[DEBUG] Original weights stats (sum={w_sum}) - min: {weights.min():.4f}, max: {weights.max():.4f}, mean: {weights.mean():.4f}, stdv: {weights.std():.4f}")
+    print(f"[DEBUG] Normalized weights (sum={norm_weights.sum():.4f}) - min: {norm_weights.min():.6f}, max: {norm_weights.max():.6f}")
     
 
 
@@ -291,14 +291,17 @@ def _unbounded_proportional_allocate(
     # the remainder one by one based on largest fractional part
     budget_to_distribute = total - alloc.sum()
     remainder = fractional_parts - int_alloc
-    indices_to_add = np.argsort(-remainder, kind="stable") # Sort descending
+    indices_to_add = np.argsort(-remainder, kind="stable") 
+    # Sort descending
+    # stable sort to preserve order among equals
+    
     for i in range(budget_to_distribute):
         idx = indices_to_add[i % N] # Cycle through if needed, though unlikely
         alloc[idx] += 1
     
     
     # calculate the correlation coefficient 
-    # to see how far off alloc[]:int is from weights[]:float
+    # to see how far off alloc[](int) is from weights[](float)
     expected_alloc = norm_weights * total  # ideal fractional allocation
     if np.allclose(norm_weights, norm_weights[0], rtol=1e-9):
         correlation = 1.0  # Perfect correlation for uniform distribution
@@ -308,7 +311,7 @@ def _unbounded_proportional_allocate(
     rmse = np.sqrt(np.mean((alloc - expected_alloc) ** 2))
     
     print(f"[DEBUG] Allocation quality metrics:")
-    print(f"  - Pearson correlation: {correlation:.4f} (1.0 = perfect)")
+    print(f"  - Pearson correlation rho: {correlation:.4f} (1.0 = perfect)")
     print(f"  - RMSE: {rmse:.4f} (0.0 = perfect)")
 
 
@@ -326,8 +329,8 @@ class MixedBudgetingPolicy(BudgetingPolicy):
     Mixed budgeting policy that combines 2D visual (distortion) and 3D geometric (area) features.
     
     Reads pre-calculated weights from:
-    - policy/mesh_milo/tri_{N}/area/weights.npy
-    - policy/mesh_mil/tri_{N}/distortion/weights.npy
+    - policy/mesh_{mesh_type}/tri_{N}/area/weights.npy
+    - policy/mesh_{mesh_type}/tri_{N}/distortion/weights.npy
     
     Final weights = weight_geometry * area_weights + weight_visual * distortion_weights,
     where weight_geometry + weight_visual = 1.0 
@@ -337,6 +340,7 @@ class MixedBudgetingPolicy(BudgetingPolicy):
                  weight_visual: float = 0.5, 
                  weight_geometry: float = 0.5, 
                  dataset_path: str = None, 
+                 mesh_type: str = None,
                  **kwargs):
         
         super().__init__(mesh, **kwargs)
@@ -351,6 +355,7 @@ class MixedBudgetingPolicy(BudgetingPolicy):
         self.weight_visual = weight_visual
         self.weight_geometry = weight_geometry
         self.dataset_path = dataset_path
+        self.mesh_type = mesh_type
         
         # Load weights (importance score of each triangle) from files
         area_weights, distortion_weights = self._load_weights()
@@ -396,13 +401,14 @@ class MixedBudgetingPolicy(BudgetingPolicy):
         """
         # Construct paths based on number of triangles
         num_tri = self.num_triangles
+        mt = self.mesh_type
         # [TODO] fix hardcoded
-        policy_base = os.path.join(self.dataset_path, "policy", "mesh_milo", f"tri_{num_tri}")
+        policy_base = os.path.join(self.dataset_path, "policy", f"mesh_{mt}", f"tri_{num_tri}")
         
         area_path = os.path.join(policy_base, "area", "weights.npy")
         distortion_path = os.path.join(policy_base, "distortion", "weights.npy")
         
-        print(f"[INFO] MixedBudgetingPolicy: Loading weights for {num_tri} triangles")
+        print(f"[INFO] MixedBudgetingPolicy::load() Loading weights for {num_tri} triangles")
         print(f"[INFO]   Area weights from: {area_path}")
         print(f"[INFO]   Distortion weights from: {distortion_path}")
         

@@ -33,7 +33,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
     Background tensor (bg_color) must be on GPU!
     """
     
-    print(f"[DEBUG][DEBUG] bg_color: {bg_color}")
+    # print(f"[DEBUG][DEBUG] bg_color: {bg_color}")
     # Using textured mesh for color
     if bg_color is not None and bg_depth is not None:
         pass  # Both bg_color and bg_depth are provided, no need to render textured mesh

@@ -16,22 +16,25 @@ UNIT_BUDGET=0.5 # budget proportional to number of triangles
 
 
 # POLICIES=("planarity" "area" "distortion" "uniform" "random", "mixed") 
-POLICY=("area") # choose one from above
 
 # [DOING] test all combinations of mixed policy
-# POLICY=("mixed22")
-# POLICY=("mixed13")
+
+# using min-max normalization 
+# POLICY=("mixed22") done
+POLICY=("mixed13")
 # POLICY=("mixed31")
 
 
-
-
+# using z-score normalization
+# POLICY=("mixed22") 
+# POLICY=("mixed13")
+# POLICY=("mixed31")
 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
 MESH_TYPE="milo" # "sugar" or "colmap" or "milo"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/downsample_50/mesh.ply"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/${SCENE_NAME}.ply"
 
 
 
@@ -90,24 +93,26 @@ echo > "$LOG_FILE" # clear log file
     --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
     --gs_type gs_mesh \
-    --policy_path "$POLICY_CACHED" \
     --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     $IS_WHITE_BG \
     $RESOLUTION \
     --iteration 10 \
     2>&1
+    
+    
+    # --policy_path "$POLICY_CACHED" \
 } | tee -a "$LOG_FILE"
 
 
 
-{
-    echo "Step 1/3: Training"
-    python train.py --eval \
+echo "Step 1/3: Training"
+python train.py --eval \
     -s "$DATASET_DIR" \
     -m "$SAVE_DIR" \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
     --debugging \
+    --debug_freq 500 \
     --occlusion \
     --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
@@ -116,10 +121,8 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration $ITERATIONS \
-    2>&1
-    # --budget_per_tri "$UNIT_BUDGET" \
-} | tee -a "$LOG_FILE"
+    --iteration $ITERATIONS >> $LOG_FILE
+    
 
 
 
