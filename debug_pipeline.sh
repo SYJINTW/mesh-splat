@@ -8,15 +8,24 @@
 
 
 # === [CONFIGS] ===========================
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 # [TODO] make the pipeline support BUDGET=0 (mesh only) case
 # BUDGET=(2000000) # arbitrary budget 
-UNIT_BUDGET=0.3 # budget proportional to number of triangles
+UNIT_BUDGET=0.5 # budget proportional to number of triangles
 
 
-# POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("uniform") # choose one from above
+# POLICIES=("planarity" "area" "distortion" "uniform" "random", "mixed") 
+POLICY=("area") # choose one from above
+
+# [DOING] test all combinations of mixed policy
+# POLICY=("mixed22")
+# POLICY=("mixed13")
+# POLICY=("mixed31")
+
+
+
+
 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
@@ -40,6 +49,8 @@ MESH_IMG_DIR=$(dirname "$MESH_FILE")
 
 RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
+ITERATIONS=3000
+
 
 DATE_TODAY=$(date +"%m%d")
 SAVE_DIR="output/_DEBUG_${DATE_TODAY}/${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
@@ -105,7 +116,7 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration 10 \
+    --iteration $ITERATIONS \
     2>&1
     # --budget_per_tri "$UNIT_BUDGET" \
 } | tee -a "$LOG_FILE"

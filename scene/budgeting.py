@@ -80,15 +80,128 @@ class BudgetingPolicy(ABC):
         pass
 
 
-# [TODO] implement this
+# [TODO] [DOING] implement this
 class MixedBudgetingPolicy(BudgetingPolicy):
-    # 2D loss (distortion) map + 3D geometric property (e.g. mesh geometry)
-    weight_distortion: float = 0.5 # hyperparameter to be tuned empirically
-    weight_geometry: float = 1.0 - weight_distortion
+    """
+    Mixed budgeting policy that combines 2D visual (distortion) and 3D geometric (area) features.
     
-    # use area or planarity, whichever
+    Reads pre-calculated weights from:
+    - policy/mesh_colmap/tri_{N}/area/weights.npy
+    - policy/mesh_colmap/tri_{N}/distortion/weights.npy
     
-    pass
+    Final weights = weight_geometry * area_weights + weight_visual * distortion_weights
+    """
+    
+    def __init__(self, mesh: trimesh.Trimesh, 
+                 weight_visual: float = 0.5, 
+                 weight_geometry: float = 0.5, 
+                 dataset_path: str = None, 
+                 **kwargs):
+        
+        super().__init__(mesh, **kwargs)
+        
+        assert 0.0 <= weight_visual <= 1.0, "weight_visual must be in [0,1]"
+        assert 0.0 <= weight_geometry <= 1.0, "weight_geometry must be in [0,1]"
+        assert abs(weight_visual + weight_geometry - 1.0) < EPS, \
+            f"weight_visual ({weight_visual}) and weight_geometry ({weight_geometry}) must sum to 1.0"
+        assert dataset_path is not None, \
+            "MixedBudgetingPolicy requires dataset_path to load weights from file."
+        
+        self.weight_visual = weight_visual
+        self.weight_geometry = weight_geometry
+        self.dataset_path = dataset_path
+        
+        # Load weights (importance score of each triangle) from files
+        area_weights, distortion_weights = self._load_weights()
+        
+        # just assert, DO NOT fall back
+        assert  (area_weights is not None) and (distortion_weights is not None), \
+            "Failed to load weights for MixedBudgetingPolicy."
+        # Normalize weights to [0, 1] before mixing
+        area_norm = self._normalize_weights(area_weights)
+        distortion_norm = self._normalize_weights(distortion_weights)
+        
+        # Compute weighted average
+        mixed_weights = (
+            self.weight_geometry * area_norm + 
+            self.weight_visual * distortion_norm
+        )
+        
+        self.weights = np.maximum(mixed_weights, EPS).astype(np.float32) # ensure non-negative
+        
+        print(f"[INFO] MixedBudgetingPolicy: Combined weights with "
+                f"geometry={self.weight_geometry:.2f}, visual={self.weight_visual:.2f}")
+        print(f"[INFO] Mixed weights stats - min: {self.weights.min():.4f}, "
+                f"max: {self.weights.max():.4f}, mean: {self.weights.mean():.4f}")
+        
+    
+    def _normalize_weights(self, weights: np.ndarray) -> np.ndarray:
+        """Normalize weights to [0, 1] range using min-max normalization."""
+        w_min = weights.min()
+        w_max = weights.max()
+        
+        if w_max - w_min < EPS:
+            print("[WARNING] All weights are equal, returning uniform normalized weights")
+            return np.ones_like(weights) / len(weights)
+        
+        return (weights - w_min) / (w_max - w_min + EPS)
+    
+    def _load_weights(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Load pre-calculated weights from policy directory.
+        
+        Returns:
+            tuple: (area_weights, distortion_weights) or (None, None) if loading fails
+        """
+        # Construct paths based on number of triangles
+        num_tri = self.num_triangles
+        # [TODO] fix hardcoded
+        policy_base = os.path.join(self.dataset_path, "policy", "mesh_milo", f"tri_{num_tri}")
+        
+        area_path = os.path.join(policy_base, "area", "weights.npy")
+        distortion_path = os.path.join(policy_base, "distortion", "weights.npy")
+        
+        print(f"[INFO] MixedBudgetingPolicy: Loading weights for {num_tri} triangles")
+        print(f"[INFO]   Area weights from: {area_path}")
+        print(f"[INFO]   Distortion weights from: {distortion_path}")
+        
+        # Load area weights
+        area_weights = None
+        if os.path.exists(area_path):
+            try:
+                area_weights = np.load(area_path).astype(np.float32)
+                if len(area_weights) != num_tri:
+                    print(f"[ERROR] Area weights length mismatch: "
+                          f"expected {num_tri}, got {len(area_weights)}")
+                    area_weights = None
+                else:
+                    print(f"[INFO] Loaded area weights: shape={area_weights.shape}, "
+                          f"range=[{area_weights.min():.4f}, {area_weights.max():.4f}]")
+            except Exception as e:
+                print(f"[ERROR] Failed to load area weights: {e}")
+                area_weights = None
+        else:
+            print(f"[ERROR] Area weights file not found: {area_path}")
+        
+        # Load distortion weights
+        distortion_weights = None
+        if os.path.exists(distortion_path):
+            try:
+                distortion_weights = np.load(distortion_path).astype(np.float32)
+                if len(distortion_weights) != num_tri:
+                    print(f"[ERROR] Distortion weights length mismatch: "
+                          f"expected {num_tri}, got {len(distortion_weights)}")
+                    distortion_weights = None
+                else:
+                    print(f"[INFO] Loaded distortion weights: shape={distortion_weights.shape}, "
+                          f"range=[{distortion_weights.min():.4f}, {distortion_weights.max():.4f}]")
+            except Exception as e:
+                print(f"[ERROR] Failed to load distortion weights: {e}")
+                distortion_weights = None
+        else:
+            print(f"[ERROR] Distortion weights file not found: {distortion_path}")
+        
+        return area_weights, distortion_weights
 
 
 class AreaBasedBudgetingPolicy(BudgetingPolicy):
@@ -174,10 +287,17 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         
         
         "distortion": DistortionMapBudgetingPolicy,
-        
         "distortion_no_avg": partial(DistortionMapBudgetingPolicy, is_averaging_across_views=False),
         
-        "mixed": None,
+        "mixed": partial(MixedBudgetingPolicy), # not yet implemented
+        
+        "mixed31": partial(MixedBudgetingPolicy, weight_visual =0.75, weight_geometry=0.25), 
+        "mixed22": partial(MixedBudgetingPolicy, weight_visual =0.5, weight_geometry=0.5), 
+        "mixed13": partial(MixedBudgetingPolicy, weight_visual =0.25, weight_geometry=0.75), 
+        
+        
+        
+        
         "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
     try:

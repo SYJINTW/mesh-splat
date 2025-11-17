@@ -75,7 +75,7 @@ def get_num_splats_per_triangle(
             mesh=mesh_scene,
             viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
             dataset_path=path,
-            p3d_mesh=textured_mesh
+            p3d_mesh=textured_mesh,
         )
         num_splats_per_triangle = budgeting_policy.allocate(
             total_splats=total_splats,
