@@ -31,6 +31,113 @@ from pytorch3d.structures import Meshes
 from pytorch3d.renderer import TexturesVertex
 from train import load_textured_mesh
 
+import json
+import time
+
+def create_scene_card(dataset: ModelParams, scene, gs_type: str, occlusion: bool, 
+                     mesh_type: str, iteration: int, render_time: float = None) -> dict:
+    """
+    Create a scene card dictionary with rendering metadata.
+    
+    Args:
+        dataset: Model parameters
+        scene: Scene object with loaded gaussians
+        gs_type: Gaussian splatting type ('gs', 'gs_mesh', etc.)
+        occlusion: Whether occlusion handling is enabled
+        mesh_type: Type of mesh used ('sugar', 'colmap', etc.)
+        iteration: Training iteration number
+        render_time: Total rendering time in seconds (optional)
+    
+    Returns:
+        Dictionary containing scene metadata
+    """
+    scene_card = {}
+    
+    # Target budget (as requested by args)
+    target_budget = getattr(dataset, "total_splats", None)
+    if target_budget is None and hasattr(dataset, "budget_per_tri"):
+        # Try to estimate using triangle count if available
+        num_tri = None
+        if hasattr(scene.gaussians, "triangles"):
+            try:
+                num_tri = int(getattr(scene.gaussians.triangles, "shape", [None])[0])
+            except Exception:
+                num_tri = None
+        if num_tri:
+            target_budget = int(dataset.budget_per_tri * num_tri)
+    scene_card["target_budget"] = target_budget
+    
+    # Used budget: try several common attribute names
+    used_budget = None
+    for attr in ("num_splats", "N", "num_gaussians", "num_points"):
+        if hasattr(scene.gaussians, attr):
+            used_budget = int(getattr(scene.gaussians, attr))
+            break
+    # Fallback to point_cloud sizes
+    if used_budget is None:
+        try:
+            pc = getattr(scene.gaussians, "point_cloud", None)
+            if pc is not None:
+                if hasattr(pc, "positions"):
+                    used_budget = int(len(pc.positions))
+                elif hasattr(pc, "points"):
+                    used_budget = int(len(pc.points))
+                elif hasattr(pc, "vertices"):
+                    used_budget = int(len(pc.vertices))
+        except Exception:
+            used_budget = None
+    scene_card["used_budget"] = used_budget
+    
+    # Renderer / training type
+    if gs_type == "gs":
+        renderer_type = "pure_GS"
+    elif gs_type == "gs_mesh":
+        renderer_type = "DTGS" if occlusion else "TGS"
+    else:
+        renderer_type = gs_type
+    scene_card["renderer_type"] = renderer_type
+    
+    # Training type: what the saved model was trained with
+    training_type = getattr(dataset, "gs_type", gs_type)
+    scene_card["training_type"] = training_type
+    
+    # Mesh type
+    scene_card["mesh_type"] = mesh_type
+    
+    # Trained iterations / epoch
+    scene_card["trained_iteration"] = scene.loaded_iter if hasattr(scene, "loaded_iter") else iteration
+    
+    # Budgeting policy and related
+    scene_card["alloc_policy"] = getattr(dataset, "alloc_policy", None)
+    scene_card["budget_per_tri"] = getattr(dataset, "budget_per_tri", None)
+    
+    # Number of triangles (if available)
+    num_triangles = None
+    try:
+        if hasattr(scene.gaussians, "triangles"):
+            num_triangles = int(getattr(scene.gaussians.triangles, "shape", [None])[0])
+    except Exception:
+        num_triangles = None
+    scene_card["num_triangles"] = num_triangles
+    
+    # Timing information
+    scene_card["render_time_seconds"] = render_time
+    scene_card["training_time_seconds"] = None  # Not available in render stage
+    
+    # Metadata
+    scene_card["timestamp"] = time.time()
+    scene_card["notes"] = "training_time_seconds not available during rendering"
+    
+    return scene_card
+
+def save_scene_card(scene_card: dict, output_path: str):
+    """Save scene card dictionary to JSON file."""
+    try:
+        with open(output_path, "w") as fh:
+            json.dump(scene_card, fh, indent=2)
+        print(f"[INFO] Render:: wrote scene card to {output_path}")
+    except Exception as e:
+        print(f"[WARNING] Could not write scene card to {output_path}: {e}")
 
 def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline, background,
                 # >>>> [YC] add
@@ -138,6 +245,8 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
                 precaptured_mesh_img_path : str = None
                 # <<<< [YC] add
                 ):
+    render_timer_start = time.time()
+    
     with torch.no_grad():
         gaussians = gaussianModelRender[gs_type](dataset.sh_degree)
         textured_mesh = load_textured_mesh(dataset=dataset, texture_obj_path=texture_obj_path)
@@ -169,9 +278,6 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
         bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-
-        # [TODO] store more info about the scene into a json ("model card", "scene card")
-        # [TODO] test dropping splats during rendering too
         # Add new params here
         render_kwargs = {
             'mesh_type': mesh_type,
@@ -191,6 +297,13 @@ def render_sets(gs_type: str, dataset : ModelParams, iteration : int, pipeline :
             render_set(gs_type, dataset.model_path, "test", scene.loaded_iter, 
                   scene.getTestCameras(), gaussians, pipeline, background,
                   **render_kwargs)
+
+    # Create and save scene card
+    render_time = time.time() - render_timer_start
+    scene_card = create_scene_card(dataset, scene, gs_type, occlusion, 
+                                   mesh_type, iteration, render_time)
+    scene_card_path = os.path.join(dataset.model_path, "scene_card.json")
+    save_scene_card(scene_card, scene_card_path)
 
 if __name__ == "__main__":
     # Set up command line argument parser

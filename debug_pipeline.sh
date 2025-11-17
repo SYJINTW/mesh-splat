@@ -21,12 +21,12 @@ UNIT_BUDGET=0.5 # budget proportional to number of triangles
 
 # using min-max normalization 
 
-# POLICY=("mixed_v2g2") done
-# POLICY=("mixed_v1g3") done
-POLICY=("mixed_v3g1")
-# POLICY=("distortion") done
-# POLICY=("area") done
-# POLICY=("distortion_no_avg") done
+POLICY=("mixed_v2g2") 
+# POLICY=("mixed_v1g3") #done
+# POLICY=("mixed_v3g1") #done
+# POLICY=("distortion") #done
+# POLICY=("area") #done
+# POLICY=("distortion_no_avg") #done
 
 
 
