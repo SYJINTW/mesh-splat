@@ -20,15 +20,18 @@ UNIT_BUDGET=0.5 # budget proportional to number of triangles
 # [DOING] test all combinations of mixed policy
 
 # using min-max normalization 
+
 # POLICY=("mixed22") done
-POLICY=("mixed13")
+# POLICY=("mixed13") done
 # POLICY=("mixed31")
+POLICY=("distortion")
+# POLICY=("area") done
 
 
-# using z-score normalization
-# POLICY=("mixed22") 
-# POLICY=("mixed13")
-# POLICY=("mixed31")
+# using other normalization
+# POLICY=("mixed_v2g2") 
+# POLICY=("mixed_v1g3")
+# POLICY=("mixed_v3g1")
 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
