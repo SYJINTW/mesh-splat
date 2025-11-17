@@ -80,189 +80,6 @@ class BudgetingPolicy(ABC):
         pass
 
 
-# [TODO] [DOING] implement this
-class MixedBudgetingPolicy(BudgetingPolicy):
-    """
-    Mixed budgeting policy that combines 2D visual (distortion) and 3D geometric (area) features.
-    
-    Reads pre-calculated weights from:
-    - policy/mesh_colmap/tri_{N}/area/weights.npy
-    - policy/mesh_colmap/tri_{N}/distortion/weights.npy
-    
-    Final weights = weight_geometry * area_weights + weight_visual * distortion_weights
-    """
-    
-    def __init__(self, mesh: trimesh.Trimesh, 
-                 weight_visual: float = 0.5, 
-                 weight_geometry: float = 0.5, 
-                 dataset_path: str = None, 
-                 **kwargs):
-        
-        super().__init__(mesh, **kwargs)
-        
-        assert 0.0 <= weight_visual <= 1.0, "weight_visual must be in [0,1]"
-        assert 0.0 <= weight_geometry <= 1.0, "weight_geometry must be in [0,1]"
-        assert abs(weight_visual + weight_geometry - 1.0) < EPS, \
-            f"weight_visual ({weight_visual}) and weight_geometry ({weight_geometry}) must sum to 1.0"
-        assert dataset_path is not None, \
-            "MixedBudgetingPolicy requires dataset_path to load weights from file."
-        
-        self.weight_visual = weight_visual
-        self.weight_geometry = weight_geometry
-        self.dataset_path = dataset_path
-        
-        # Load weights (importance score of each triangle) from files
-        area_weights, distortion_weights = self._load_weights()
-        
-        # just assert, DO NOT fall back
-        assert  (area_weights is not None) and (distortion_weights is not None), \
-            "Failed to load weights for MixedBudgetingPolicy."
-        # Normalize weights to [0, 1] before mixing
-        area_norm = self._normalize_weights(area_weights)
-        distortion_norm = self._normalize_weights(distortion_weights)
-        
-        # Compute weighted average
-        mixed_weights = (
-            self.weight_geometry * area_norm + 
-            self.weight_visual * distortion_norm
-        )
-        
-        self.weights = np.maximum(mixed_weights, EPS).astype(np.float32) # ensure non-negative
-        
-        print(f"[INFO] MixedBudgetingPolicy: Combined weights with "
-                f"geometry={self.weight_geometry:.2f}, visual={self.weight_visual:.2f}")
-        print(f"[INFO] Mixed weights stats - min: {self.weights.min():.4f}, "
-                f"max: {self.weights.max():.4f}, mean: {self.weights.mean():.4f}")
-        
-    
-    def _normalize_weights(self, weights: np.ndarray) -> np.ndarray:
-        """Normalize weights to [0, 1] range using min-max normalization."""
-        w_min = weights.min()
-        w_max = weights.max()
-        
-        if w_max - w_min < EPS:
-            print("[WARNING] All weights are equal, returning uniform normalized weights")
-            return np.ones_like(weights) / len(weights)
-        
-        return (weights - w_min) / (w_max - w_min + EPS)
-    
-    def _load_weights(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """
-        Load pre-calculated weights from policy directory.
-        
-        Returns:
-            tuple: (area_weights, distortion_weights) or (None, None) if loading fails
-        """
-        # Construct paths based on number of triangles
-        num_tri = self.num_triangles
-        # [TODO] fix hardcoded
-        policy_base = os.path.join(self.dataset_path, "policy", "mesh_milo", f"tri_{num_tri}")
-        
-        area_path = os.path.join(policy_base, "area", "weights.npy")
-        distortion_path = os.path.join(policy_base, "distortion", "weights.npy")
-        
-        print(f"[INFO] MixedBudgetingPolicy: Loading weights for {num_tri} triangles")
-        print(f"[INFO]   Area weights from: {area_path}")
-        print(f"[INFO]   Distortion weights from: {distortion_path}")
-        
-        # Load area weights
-        area_weights = None
-        if os.path.exists(area_path):
-            try:
-                area_weights = np.load(area_path).astype(np.float32)
-                if len(area_weights) != num_tri:
-                    print(f"[ERROR] Area weights length mismatch: "
-                          f"expected {num_tri}, got {len(area_weights)}")
-                    area_weights = None
-                else:
-                    print(f"[INFO] Loaded area weights: shape={area_weights.shape}, "
-                          f"range=[{area_weights.min():.4f}, {area_weights.max():.4f}]")
-            except Exception as e:
-                print(f"[ERROR] Failed to load area weights: {e}")
-                area_weights = None
-        else:
-            print(f"[ERROR] Area weights file not found: {area_path}")
-        
-        # Load distortion weights
-        distortion_weights = None
-        if os.path.exists(distortion_path):
-            try:
-                distortion_weights = np.load(distortion_path).astype(np.float32)
-                if len(distortion_weights) != num_tri:
-                    print(f"[ERROR] Distortion weights length mismatch: "
-                          f"expected {num_tri}, got {len(distortion_weights)}")
-                    distortion_weights = None
-                else:
-                    print(f"[INFO] Loaded distortion weights: shape={distortion_weights.shape}, "
-                          f"range=[{distortion_weights.min():.4f}, {distortion_weights.max():.4f}]")
-            except Exception as e:
-                print(f"[ERROR] Failed to load distortion weights: {e}")
-                distortion_weights = None
-        else:
-            print(f"[ERROR] Distortion weights file not found: {distortion_path}")
-        
-        return area_weights, distortion_weights
-
-
-class AreaBasedBudgetingPolicy(BudgetingPolicy):
-    """
-    Allocates points to triangles based on their surface area.
-    Larger triangles get more points.
-    """
-    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
-        super().__init__(mesh, **kwargs)
-        # Use pre-computed face areas from the trimesh object
-        self.weights = np.maximum(self.mesh.area_faces, EPS).astype(np.float32)
-
-
-class UniformBudgetingPolicy(BudgetingPolicy):
-    """
-    Allocates a uniform number of points to each triangle.
-    """
-    def __init__(self, mesh=None, **kwargs):
-        super().__init__(mesh, **kwargs)
-    
-    
-    # [NEW] don't override
-    
-    # only this baseline policy overrides allocate() method
-    # def allocate(
-    #     self,
-    #     total_splats: int,
-    # ) -> np.ndarray:
-    #     num_triangles = self.num_triangles
-    #     uniform_alloc = total_splats // num_triangles
-    #     print(f"[INFO] Budget::UniformBudgetingPolicy allocating {uniform_alloc} splats per triangle.")
-        
-    #     return np.full((num_triangles,), uniform_alloc, dtype=np.int32)
-
-
-
-
-class RandomUniformBudgetingPolicy(BudgetingPolicy):
-    """
-    Allocates points to triangles based on weights randomly sampled from Uniform(0,1).
-    """
-    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
-        super().__init__(mesh, **kwargs)
-        weights = np.random.rand(self.num_triangles).astype(np.float32)
-        self.weights = np.clip(weights, EPS, 1.0) # make sure weights are positive
-
-
-
-class RandomNormalBudgetingPolicy(BudgetingPolicy):
-    """
-        Allocates points to triangles based on weights randomly sampled from Normal(0,1).
-
-    """
-    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
-        super().__init__(mesh, **kwargs)
-        mu = 0.5
-        sigma = 0.15 # adjustable parameter
-        w = np.random.normal(loc=mu, scale=sigma, size=self.num_triangles).astype(np.float32)
-        self.weights = np.clip(w, EPS, 1.0) # make sure weights are positive
-
-    
 
 def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
     
@@ -291,14 +108,11 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         
         "mixed": partial(MixedBudgetingPolicy), # not yet implemented
         
-        "mixed31": partial(MixedBudgetingPolicy, weight_visual =0.75, weight_geometry=0.25), 
-        "mixed22": partial(MixedBudgetingPolicy, weight_visual =0.5, weight_geometry=0.5), 
-        "mixed13": partial(MixedBudgetingPolicy, weight_visual =0.25, weight_geometry=0.75), 
+        "mixed31": partial(MixedBudgetingPolicy, weight_visual=0.75, weight_geometry=0.25), 
+        "mixed22": partial(MixedBudgetingPolicy, weight_visual=0.5, weight_geometry=0.5), 
+        "mixed13": partial(MixedBudgetingPolicy, weight_visual=0.25, weight_geometry=0.75), 
         
-        
-        
-        
-        "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
+        # "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
     try:
         print(f"[INFO] Budget::Using budgeting policy: {name}")
@@ -310,6 +124,9 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         raise ValueError(f"Unknown budgeting policy: '{name}'")
 
 
+
+# [NOTE] we use unbounded version as default allocate() method
+# this one is currently unused
 def _bounded_proportional_allocate(
     weights: np.ndarray,
     total: int,
@@ -498,6 +315,195 @@ def _unbounded_proportional_allocate(
     assert np.all(alloc >= 0), "Error: Allocation contains negative values"
     assert alloc.sum() == total, f"Error: Final allocation sum {alloc.sum()} does not match total budget {total}"
     return alloc
+
+
+
+
+# [TODO] [DOING] implement this
+# [NOTE] could change geometry weight to planarity if time permits more testing
+class MixedBudgetingPolicy(BudgetingPolicy):
+    """
+    Mixed budgeting policy that combines 2D visual (distortion) and 3D geometric (area) features.
+    
+    Reads pre-calculated weights from:
+    - policy/mesh_milo/tri_{N}/area/weights.npy
+    - policy/mesh_mil/tri_{N}/distortion/weights.npy
+    
+    Final weights = weight_geometry * area_weights + weight_visual * distortion_weights,
+    where weight_geometry + weight_visual = 1.0 
+    """
+    
+    def __init__(self, mesh: trimesh.Trimesh, 
+                 weight_visual: float = 0.5, 
+                 weight_geometry: float = 0.5, 
+                 dataset_path: str = None, 
+                 **kwargs):
+        
+        super().__init__(mesh, **kwargs)
+        
+        assert 0.0 <= weight_visual <= 1.0, "weight_visual must be in [0,1]"
+        assert 0.0 <= weight_geometry <= 1.0, "weight_geometry must be in [0,1]"
+        assert abs(weight_visual + weight_geometry - 1.0) < EPS, \
+            f"weight_visual ({weight_visual}) and weight_geometry ({weight_geometry}) must sum to 1.0"
+        assert dataset_path is not None, \
+            "MixedBudgetingPolicy requires dataset_path to load weights from file."
+        
+        self.weight_visual = weight_visual
+        self.weight_geometry = weight_geometry
+        self.dataset_path = dataset_path
+        
+        # Load weights (importance score of each triangle) from files
+        area_weights, distortion_weights = self._load_weights()
+        
+        # just assert, DO NOT fall back
+        assert  (area_weights is not None) and (distortion_weights is not None), \
+            "Failed to load weights for MixedBudgetingPolicy."
+        # Normalize weights to [0, 1] before mixing
+        area_norm = self._normalize_weights(area_weights)
+        distortion_norm = self._normalize_weights(distortion_weights)
+        
+        # Compute weighted average
+        mixed_weights = (
+            self.weight_geometry * area_norm + 
+            self.weight_visual * distortion_norm
+        )
+        
+        self.weights = np.maximum(mixed_weights, EPS).astype(np.float32) # ensure non-negative
+        
+        print(f"[INFO] MixedBudgetingPolicy: Combined weights with "
+                f"geometry={self.weight_geometry:.2f}, visual={self.weight_visual:.2f}")
+        print(f"[INFO] Mixed weights stats - min: {self.weights.min():.4f}, "
+                f"max: {self.weights.max():.4f}, mean: {self.weights.mean():.4f}")
+        
+    
+    def _normalize_weights(self, weights: np.ndarray) -> np.ndarray:
+        """Normalize weights to [0, 1] range using min-max normalization."""
+        w_min = weights.min()
+        w_max = weights.max()
+        
+        if w_max - w_min < EPS:
+            print("[WARNING] All weights are equal, returning uniform normalized weights")
+            return np.ones_like(weights) / len(weights)
+        
+        return (weights - w_min) / (w_max - w_min + EPS)
+    
+    def _load_weights(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Load pre-calculated weights from policy directory.
+        
+        Returns:
+            tuple: (area_weights, distortion_weights) or (None, None) if loading fails
+        """
+        # Construct paths based on number of triangles
+        num_tri = self.num_triangles
+        # [TODO] fix hardcoded
+        policy_base = os.path.join(self.dataset_path, "policy", "mesh_milo", f"tri_{num_tri}")
+        
+        area_path = os.path.join(policy_base, "area", "weights.npy")
+        distortion_path = os.path.join(policy_base, "distortion", "weights.npy")
+        
+        print(f"[INFO] MixedBudgetingPolicy: Loading weights for {num_tri} triangles")
+        print(f"[INFO]   Area weights from: {area_path}")
+        print(f"[INFO]   Distortion weights from: {distortion_path}")
+        
+        # Load area weights
+        area_weights = None
+        if os.path.exists(area_path):
+            try:
+                area_weights = np.load(area_path).astype(np.float32)
+                if len(area_weights) != num_tri:
+                    print(f"[ERROR] Area weights length mismatch: "
+                          f"expected {num_tri}, got {len(area_weights)}")
+                    area_weights = None
+                else:
+                    print(f"[INFO] Loaded area weights: shape={area_weights.shape}, "
+                          f"range=[{area_weights.min():.4f}, {area_weights.max():.4f}]")
+            except Exception as e:
+                print(f"[ERROR] Failed to load area weights: {e}")
+                area_weights = None
+        else:
+            print(f"[ERROR] Area weights file not found: {area_path}")
+        
+        # Load distortion weights
+        distortion_weights = None
+        if os.path.exists(distortion_path):
+            try:
+                distortion_weights = np.load(distortion_path).astype(np.float32)
+                if len(distortion_weights) != num_tri:
+                    print(f"[ERROR] Distortion weights length mismatch: "
+                          f"expected {num_tri}, got {len(distortion_weights)}")
+                    distortion_weights = None
+                else:
+                    print(f"[INFO] Loaded distortion weights: shape={distortion_weights.shape}, "
+                          f"range=[{distortion_weights.min():.4f}, {distortion_weights.max():.4f}]")
+            except Exception as e:
+                print(f"[ERROR] Failed to load distortion weights: {e}")
+                distortion_weights = None
+        else:
+            print(f"[ERROR] Distortion weights file not found: {distortion_path}")
+        
+        return area_weights, distortion_weights
+
+
+class AreaBasedBudgetingPolicy(BudgetingPolicy):
+    """
+    Allocates points to triangles based on their surface area.
+    Larger triangles get more points.
+    """
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
+        super().__init__(mesh, **kwargs)
+        # Use pre-computed face areas from the trimesh object
+        self.weights = np.maximum(self.mesh.area_faces, EPS).astype(np.float32)
+
+
+class UniformBudgetingPolicy(BudgetingPolicy):
+    """
+    Allocates a uniform number of points to each triangle.
+    """
+    def __init__(self, mesh=None, **kwargs):
+        super().__init__(mesh, **kwargs)
+    
+    
+    # [NEW] don't override
+    
+    # only this baseline policy overrides allocate() method
+    # def allocate(
+    #     self,
+    #     total_splats: int,
+    # ) -> np.ndarray:
+    #     num_triangles = self.num_triangles
+    #     uniform_alloc = total_splats // num_triangles
+    #     print(f"[INFO] Budget::UniformBudgetingPolicy allocating {uniform_alloc} splats per triangle.")
+        
+    #     return np.full((num_triangles,), uniform_alloc, dtype=np.int32)
+
+
+
+
+class RandomUniformBudgetingPolicy(BudgetingPolicy):
+    """
+    Allocates points to triangles based on weights randomly sampled from Uniform(0,1).
+    """
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
+        super().__init__(mesh, **kwargs)
+        weights = np.random.rand(self.num_triangles).astype(np.float32)
+        self.weights = np.clip(weights, EPS, 1.0) # make sure weights are positive
+
+
+
+class RandomNormalBudgetingPolicy(BudgetingPolicy):
+    """
+        Allocates points to triangles based on weights randomly sampled from Normal(0,1).
+
+    """
+    def __init__(self, mesh: trimesh.Trimesh, **kwargs):
+        super().__init__(mesh, **kwargs)
+        mu = 0.5
+        sigma = 0.15 # adjustable parameter
+        w = np.random.normal(loc=mu, scale=sigma, size=self.num_triangles).astype(np.float32)
+        self.weights = np.clip(w, EPS, 1.0) # make sure weights are positive
+
+    
 
 
 
