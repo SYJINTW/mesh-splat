@@ -79,9 +79,10 @@ def evaluate(gs_type, model_paths):
                     ssims.append(ssim(renders[idx], gts[idx]))
                     psnrs.append(psnr(renders[idx], gts[idx]))
                     
+                    lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+                    
                     # [NOTE] skip LPIPS to save time for now
-                    # lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
-                    lpipss.append(-1.0)
+                    # lpipss.append(-1.0)
                     
                     
 
