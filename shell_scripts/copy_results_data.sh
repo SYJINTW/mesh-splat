@@ -31,7 +31,6 @@ echo "Done! All per_view_gs_mesh.json files copied to ./data/"
 BASE=/mnt/data1/syjintw/NEU/mesh-splat/output/main_mipnerf360
 
 SCENES=("bicycle" "bicycle-dw10" "bicycle-dw30" "bicycle-dw50" "drjohnson-dw50")
-# SCENES=("bicycle-dw50")
 
 for SCENE in ${SCENES[@]}
 do
@@ -90,7 +89,7 @@ echo "Done! All per_view_gs_mesh.json files copied to ./data/"
 
 
 BASE=/mnt/data1/syjintw/NEU/mesh-splat-games/output/main_mipnerf360
-SCENES=("bicycle" "bicycle-dw10" "bicycle-dw30" "bicycle-dw50")
+SCENES=("bicycle" "bicycle-dw10" "bicycle-dw30" "bicycle-dw50" "drjohnson-dw50")
 
 for SCENE in ${SCENES[@]}
 do
