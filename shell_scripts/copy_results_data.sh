@@ -1,4 +1,8 @@
 
+
+
+# =====================OURS=============================
+
 BASE=/mnt/data1/syjintw/NEU/mesh-splat/output/main_nerfsynthetic
 # BASE=/mnt/data1/syjintw/NEU/mesh-splat-mixed/output/main_nerfsynthetic
 SCENES=("lego" "ficus" "hotdog" "mic" "ship")
@@ -23,6 +27,21 @@ do
         cp $json_file $dest_dir/
         echo "  Copied: $rel_path"
     done
+
+    # find ${BASE}/${SCENE} -name "*.npy" | while read alloc_file; do
+    #     # Get the relative path from BASE
+    #     rel_path=${alloc_file#${BASE}/}
+        
+    #     # Create destination directory structure
+    #     dest_dir=./data/$(dirname $rel_path)
+    #     mkdir -p $dest_dir
+        
+    #     # Copy the file
+    #     cp $alloc_file $dest_dir/
+    #     echo "  Copied: $rel_path"
+    # done
+
+
 done
 
 echo "Done! All per_view_gs_mesh.json files copied to ./data/"
@@ -49,6 +68,21 @@ do
         cp $json_file $dest_dir/
         echo "  Copied: $rel_path"
     done
+
+    # find ${BASE}/${SCENE} -name "*.npy" | while read alloc_file; do
+    #     # Get the relative path from BASE
+    #     rel_path=${alloc_file#${BASE}/}
+        
+    #     # Create destination directory structure
+    #     dest_dir=./data/$(dirname $rel_path)
+    #     mkdir -p $dest_dir
+        
+    #     # Copy the file
+    #     cp $alloc_file $dest_dir/
+    #     echo "  Copied: $rel_path"
+    # done
+
+
 done
 
 echo "Done! All per_view_gs_mesh.json files copied to ./data/bicycle_exps/"
@@ -111,4 +145,42 @@ do
 done
 
 echo "Done ! All per_view_gs_mesh.json files copied to $GAMES_DATA_DIR/"
+
+
+# ============================================================
+# allocation weights file
+DATASET_BASE=/mnt/data1/syjintw/NEU/dataset
+OUTPUT_DIR=./data/weights
+
+echo "Copying weights.npy files from dataset to $OUTPUT_DIR/ ..."
+
+# List of scenes
+SCENES=("bicycle" "bicycle-dw10" "bicycle-dw30" "bicycle-dw50" "drjohnson-dw50" "garden-dw50" "lego" "ficus" "hotdog" "mic" "ship")
+
+for SCENE in ${SCENES[@]}
+do
+    echo "Copying weights.npy files for scene: $SCENE"
+    
+    # Find all weights.npy files in the scene directory
+    sudo find ${DATASET_BASE}/${SCENE} -name "weights.npy" 2>/dev/null | while read weights_file; do
+        # Get the relative path from DATASET_BASE
+        rel_path=${weights_file#${DATASET_BASE}/}
+        
+        # Extract relevant parts of the path
+        # Example: bicycle/policy/mesh_milo/tri_17693181/distortion/weights.npy
+        # We want to preserve the full structure
+        
+        # Create destination directory structure
+        dest_dir=$OUTPUT_DIR/$(dirname $rel_path)
+        mkdir -p $dest_dir
+        
+        # Copy the file
+        sudo cp $weights_file $dest_dir/
+        echo "  Copied: $rel_path"
+    done
+done
+
+echo ""
+echo "Done! All weights.npy files copied to $OUTPUT_DIR/"
+echo ""
 
