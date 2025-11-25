@@ -209,14 +209,22 @@ def render_animated(idxs, triangles, viewpoint_camera, pc: GaussianModel, pipe,
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
     
     # Compute Gaussian positions from triangles using alpha blending
-    _xyz = torch.matmul(pc.alpha, triangles)
-    _xyz = _xyz.reshape(_xyz.shape[0] * _xyz.shape[1], 3)
+    
+    # [BUG] CUDA OOM here
+    # _xyz = torch.matmul(pc.alpha, triangles)
+    # _xyz = _xyz.reshape(_xyz.shape[0] * _xyz.shape[1], 3)
+    
+    # pc.alpha: (num_gaussians, 3) - barycentric coordinates
+    # triangles: (num_gaussians, 3, 3) - triangle vertices
+    # Use bmm (batch matrix multiply) instead of matmul to avoid broadcasting issues
+    _xyz = torch.bmm(pc.alpha.unsqueeze(1), triangles).squeeze(1)
+    # Result: (num_gaussians, 3)
 
     means3D = _xyz
     means2D = screenspace_points
     opacity = pc.get_opacity
     pc.triangles = triangles
-    pc.prepare_scaling_rot()
+    pc.prepare_scaling_rot() # [fixed] out of index here
 
     # Handle covariance computation
     scales = None

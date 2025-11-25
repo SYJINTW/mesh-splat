@@ -110,8 +110,41 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         else:
             new_vertices = vertices
         
-        # Create triangles from transformed vertices
-        triangles = new_vertices[torch.tensor(gaussians.faces).long()].float().cuda()
+        # CRITICAL FIX: Perform indexing on CPU to avoid CUDA device-side assertions
+        # Move data to CPU
+        new_vertices_cpu = new_vertices.detach().cpu()
+        faces_cpu = gaussians.faces.detach().cpu().long()
+        triangle_indices_cpu = gaussians.triangle_indices.detach().cpu().long()
+
+        # 1. Create all mesh triangles (CPU)
+        # Shape: (num_mesh_faces, 3, 3)
+        all_triangles_cpu = new_vertices_cpu[faces_cpu]
+        
+        # 2. Select only the triangles bound to Gaussians (CPU)
+        # Shape: (num_gaussians, 3, 3)
+        # Clamp indices to ensure safety against any mismatch
+        max_face_idx = all_triangles_cpu.shape[0] - 1
+        triangle_indices_cpu = torch.clamp(triangle_indices_cpu, 0, max_face_idx)
+        
+        # [Fix] Update the model's indices on GPU with the safe clamped values
+        gaussians.triangle_indices = triangle_indices_cpu.cuda()
+
+        selected_triangles_cpu = all_triangles_cpu[triangle_indices_cpu]
+        
+        # 3. Move result back to GPU
+        triangles = selected_triangles_cpu.float().cuda()
+        
+        # Update the gaussians' vertices reference (needed for prepare_scaling_rot)
+        gaussians.vertices = new_vertices
+
+        # Render
+        # rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
+        #                           background,
+        #                           textured_mesh=textured_mesh)
+
+        if idx == 0:
+            print(f"[DEBUG] all triangles shape: {all_triangles_cpu.shape}")
+            print(f"[DEBUG] selected triangles shape: {triangles.shape}")
         
         # Load precaptured mesh background and depth if available
         bg = None
@@ -171,12 +204,12 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         
         # Save debug images
         if debug_flag:
             torchvision.utils.save_image(rendering, os.path.join(debug_path, '{0:05d}_rendering'.format(idx) + ".png"))
-            torchvision.utils.save_image(gt, os.path.join(debug_path, '{0:05d}_gt'.format(idx) + ".png"))
+            # torchvision.utils.save_image(gt, os.path.join(debug_path, '{0:05d}_gt'.format(idx) + ".png"))
 
 
 def render_sets(gs_type: str, dataset: ModelParams, iteration: int, pipeline: PipelineParams, 

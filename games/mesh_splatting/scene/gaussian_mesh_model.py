@@ -114,22 +114,11 @@ class GaussianMeshModel(GaussianModel):
     def prepare_scaling_rot(self):
         """
         approximate covariance matrix and calculate scaling/rotation tensors
-
-        covariance matrix is [v0, v1, v2], where
-        v0 is a normal vector to each face
-        v1 is a vector from centroid of each face and 1st vertex
-        v2 is obtained by orthogonal projection of a vector from
-        centroid to 2nd vertex onto subspace spanned by v0 and v1.
         """
         def dot(v, u):
             return (v * u).sum(dim=-1, keepdim=True)
         
         def proj(v, u):
-            """
-            projection of vector v onto subspace spanned by u
-
-            vector u is assumed to be already normalized
-            """
             coef = dot(v, u)
             return coef * u
 
@@ -153,16 +142,13 @@ class GaussianMeshModel(GaussianModel):
         s0 = self.eps_s0 * torch.ones_like(s1)
         scales = torch.concat((s0, s1, s2), dim=1).unsqueeze(dim=1)
         
-        # scales = scales.broadcast_to((*self.alpha.shape[:2], 3))
-        # self._scaling = torch.log(
-        #     torch.nn.functional.relu(self._scale * scales.flatten(start_dim=0, end_dim=1)) + self.eps_s0
-        # )
-        # rotation = torch.stack((v0, v1, v2), dim=1).unsqueeze(dim=1)
-        # rotation = rotation.broadcast_to((*self.alpha.shape[:2], 3, 3)).flatten(start_dim=0, end_dim=1)
-        # rotation = rotation.transpose(-2, -1)
-        # self._rotation = rot_to_quat_batch(rotation)
+        # [Fix] Check if triangles are already per-gaussian (expanded)
+        # If triangles.shape[0] == num_gaussians, we don't need to index with triangle_indices
+        is_already_expanded = (scales.shape[0] == self._alpha.shape[0])
         
-        scales = scales[self.triangle_indices]
+        if not is_already_expanded:
+            scales = scales[self.triangle_indices]
+
         with torch.no_grad():
             s_input = self._scale * scales.flatten(start_dim=0, end_dim=1)
             s_input = torch.nn.functional.relu(s_input) + self.eps_s0
@@ -170,8 +156,10 @@ class GaussianMeshModel(GaussianModel):
 
         self._scaling = new_scaling.detach()
         rotation = torch.stack((v0, v1, v2), dim=1).unsqueeze(dim=1)
-        # rotation = rotation.broadcast_to((*self.alpha.shape[:2], 3, 3)).flatten(start_dim=0, end_dim=1)
-        rotation = rotation[self.triangle_indices]
+        
+        if not is_already_expanded:
+            rotation = rotation[self.triangle_indices]
+            
         rotation = rotation.transpose(-2, -1)
         self._rotation = rot_to_quat_batch(rotation)
 
@@ -228,7 +216,8 @@ class GaussianMeshModel(GaussianModel):
             'point_cloud',
             'triangles',
             'vertices',
-            'faces'
+            'faces',
+            'triangle_indices'  # [Sam] add
         ]
 
         save_dict = {}
@@ -250,6 +239,11 @@ class GaussianMeshModel(GaussianModel):
             self.triangles = params['triangles']
         if 'faces' in params:
             self.faces = params['faces']
+            
+        if 'triangle_indices' in params:
+            self.triangle_indices = params['triangle_indices']
+            self.triangle_indices = params['triangle_indices']
+            print(f"[INFO] Loaded triangle_indices from checkpoint: shape {self.triangle_indices.shape}")
         # point_cloud = params['point_cloud']
         self._alpha = nn.Parameter(alpha)
         self._scale = nn.Parameter(scale)
