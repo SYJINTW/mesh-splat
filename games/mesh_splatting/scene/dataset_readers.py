@@ -51,7 +51,7 @@ def get_num_splats_per_triangle(
     min_splats_per_tri: int = 0, # [NOTE] could be adjusted
     max_splats_per_tri: int = 8,
     textured_mesh = None,
-    mesh_type : str = "sugar"
+    mesh_type: str = "sugar"
 )-> np.ndarray: # [N,], number of splats on each triangle
     
     # define allocation_path only when policy_path provided
@@ -68,6 +68,7 @@ def get_num_splats_per_triangle(
     # Use budgeting policy, computing on-the-fly
     elif total_splats is not None:
         print(f"[INFO] no pre-computed policy found")
+        print(f"[INFO] Recalculating splat allocation on the fly")
         print(f"[INFO] Scene::Reader() Using budgeting policy: {budgeting_policy_name}")
 
         budgeting_policy = get_budgeting_policy(
@@ -75,7 +76,8 @@ def get_num_splats_per_triangle(
             mesh=mesh_scene,
             viewpoint_camera_infos=train_cam_infos, # access camera objects from cam_infos in the allocator somehow
             dataset_path=path,
-            p3d_mesh=textured_mesh
+            mesh_type=mesh_type,
+            p3d_mesh=textured_mesh,
         )
         num_splats_per_triangle = budgeting_policy.allocate(
             total_splats=total_splats,

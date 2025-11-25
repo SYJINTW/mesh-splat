@@ -8,21 +8,33 @@
 
 
 # === [CONFIGS] ===========================
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 # [TODO] make the pipeline support BUDGET=0 (mesh only) case
 # BUDGET=(2000000) # arbitrary budget 
-UNIT_BUDGET=0.3 # budget proportional to number of triangles
+UNIT_BUDGET=0.5 # budget proportional to number of triangles
 
 
-# POLICIES=("planarity" "area" "distortion" "uniform" "random") 
-POLICY=("uniform") # choose one from above
+# POLICIES=("planarity" "area" "distortion" "uniform" "random", "mixed") 
+
+# [DOING] test all combinations of mixed policy
+
+# using min-max normalization 
+
+POLICY=("mixed_v2g2") 
+# POLICY=("mixed_v1g3") #done
+# POLICY=("mixed_v3g1") #done
+# POLICY=("distortion") #done
+# POLICY=("area") #done
+# POLICY=("distortion_no_avg") #done
+
+
 
 
 SCENE_NAME="hotdog" # add a loop for multiple scenes if needed
 DATASET_DIR="/mnt/data1/samk/NEU/dataset/${SCENE_NAME}" 
 MESH_TYPE="milo" # "sugar" or "colmap" or "milo"
-MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/downsample_50/mesh.ply"
+MESH_FILE="/mnt/data1/samk/NEU/dataset/milo_meshes/${SCENE_NAME}/${SCENE_NAME}.ply"
 
 
 
@@ -40,6 +52,8 @@ MESH_IMG_DIR=$(dirname "$MESH_FILE")
 
 RESOLUTION="" # or "--resolution 4" for faster debugging
 IS_WHITE_BG="-w" # set to "--white_background" if the dataset has white background
+ITERATIONS=3000
+
 
 DATE_TODAY=$(date +"%m%d")
 SAVE_DIR="output/_DEBUG_${DATE_TODAY}/${SCENE_NAME}_${MESH_TYPE}_${POLICY}_${UNIT_BUDGET}"
@@ -79,24 +93,26 @@ echo > "$LOG_FILE" # clear log file
     --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
     --gs_type gs_mesh \
-    --policy_path "$POLICY_CACHED" \
     --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     $IS_WHITE_BG \
     $RESOLUTION \
     --iteration 10 \
     2>&1
+    
+    
+    # --policy_path "$POLICY_CACHED" \
 } | tee -a "$LOG_FILE"
 
 
 
-{
-    echo "Step 1/3: Training"
-    python train.py --eval \
+echo "Step 1/3: Training"
+python train.py --eval \
     -s "$DATASET_DIR" \
     -m "$SAVE_DIR" \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
     --debugging \
+    --debug_freq 500 \
     --occlusion \
     --budget_per_tri "$UNIT_BUDGET" \
     --alloc_policy "$POLICY" \
@@ -105,10 +121,8 @@ echo > "$LOG_FILE" # clear log file
     --gs_type gs_mesh \
     $IS_WHITE_BG \
     $RESOLUTION \
-    --iteration 10 \
-    2>&1
-    # --budget_per_tri "$UNIT_BUDGET" \
-} | tee -a "$LOG_FILE"
+    --iteration $ITERATIONS >> $LOG_FILE
+    
 
 
 
