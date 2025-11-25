@@ -80,8 +80,8 @@ def evaluate(gs_type, model_paths):
                     psnrs.append(psnr(renders[idx], gts[idx]))
                     
                     # [NOTE] skip LPIPS to save time for now
-                    # lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
-                    lpipss.append(-1.0)
+                    lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+                    # lpipss.append(-1.0)
                     
                     
 
