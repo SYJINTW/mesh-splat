@@ -43,7 +43,9 @@ def transform_ficus_sinus(vertices, t, idxs):
 def transform_hotdog_fly(vertices, t, idxs):
     vertices_new = vertices.clone()
     f = torch.sin(t) * 0.5
-    vertices_new[:, 2] += t * (vertices[:, 0] ** 2 + vertices[:, 1] ** 2) ** (1 / 2) * 0.01
+    vertices_new[:, 2] += f * vertices[:, 0] ** 2 # parabola
+    #vertices_new[:, 2] += 0.3 * torch.sin(vertices[:, 0] * torch.pi + t)
+    # vertices_new[:, 2] += t * (vertices[:, 0] ** 2 + vertices[:, 1] ** 2) ** (1 / 2) * 0.01
     return vertices_new
 
 
@@ -165,19 +167,28 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             if cached_bg_depth_path.exists():
                 bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
         
+        
+        pure_bg_template = background
+        pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+        pure_bg = pure_bg.expand(3, view.image_height, view.image_width)
+        pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
+        
+        
         # Render based on gs_type
         if gs_type == "gs":
             # Pure GS rendering without textured mesh
-            pure_bg_template = background
-            pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
-            pure_bg = pure_bg.expand(3, view.image_height, view.image_width)
-            pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
             
             rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                        bg_color=pure_bg, bg_depth=pure_bg_depth)["render"]
             print("\033[94m [INFO] AnimatedRender::GS using pure GS rasterizer\033[0m")
             
         elif gs_type == "gs_mesh":
+            
+            # [NOTE] debug for now
+            
+            bg = pure_bg
+            bg_depth = pure_bg_depth
+            
             if occlusion:
                 rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                            bg_color=bg, bg_depth=bg_depth,
