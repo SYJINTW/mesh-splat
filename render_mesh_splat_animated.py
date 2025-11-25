@@ -98,6 +98,7 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     
     # Get initial vertices
     vertices = gaussians.vertices.clone()
+    mesh_vert = textured_mesh.verts_packed().clone() if textured_mesh is not None else None
     
     # Choose indexes if you want to change only part of the mesh
     idxs = None
@@ -108,13 +109,27 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         
         # Apply transformation to vertices
         if transform_func is not None:
-            new_vertices = transform_func(vertices.clone(), t[idx], idxs)
+            new_gs_vertices = transform_func(vertices.clone(), t[idx], idxs)
+            new_mesh_vert = transform_func(mesh_vert.clone(), t[idx], idxs) if mesh_vert is not None else None
         else:
-            new_vertices = vertices
+            new_gs_vertices = vertices
+            new_mesh_vert = mesh_vert
+            
+        
+        # Update textured mesh with new vertices
+        
+        print("[DEBUG] Updating textured mesh with new vertices...")
+        current_textured_mesh = None
+        if textured_mesh is not None:
+            current_textured_mesh = Meshes(
+                verts=[new_mesh_vert],
+                faces=textured_mesh.faces_list(),
+                textures=textured_mesh.textures
+            )
         
         # CRITICAL FIX: Perform indexing on CPU to avoid CUDA device-side assertions
         # Move data to CPU
-        new_vertices_cpu = new_vertices.detach().cpu()
+        new_vertices_cpu = new_gs_vertices.detach().cpu()
         faces_cpu = gaussians.faces.detach().cpu().long()
         triangle_indices_cpu = gaussians.triangle_indices.detach().cpu().long()
 
@@ -137,7 +152,7 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         triangles = selected_triangles_cpu.float().cuda()
         
         # Update the gaussians' vertices reference (needed for prepare_scaling_rot)
-        gaussians.vertices = new_vertices
+        gaussians.vertices = new_gs_vertices
 
         # Render
         # rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
@@ -185,21 +200,20 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         elif gs_type == "gs_mesh":
             
             # [NOTE] debug for now
-            
-            bg = pure_bg
-            bg_depth = pure_bg_depth
+            # bg = pure_bg
+            # bg_depth = pure_bg_depth
             
             if occlusion:
                 rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                            bg_color=bg, bg_depth=bg_depth,
-                                           textured_mesh=textured_mesh,
+                                           textured_mesh=current_textured_mesh,
                                            mesh_background_color=background)["render"]
                 print("\033[92m [INFO] AnimatedRender::DTGS using Depth+Texture+GS rasterizer\033[0m")
             else:
                 pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
                 rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                            bg_color=bg, bg_depth=pure_bg_depth,
-                                           textured_mesh=textured_mesh,
+                                           textured_mesh=current_textured_mesh,
                                            mesh_background_color=background)["render"]
                 print("\033[96m [INFO] AnimatedRender::TGS using Texture+GS rasterizer\033[0m")
             
@@ -212,7 +226,6 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                 _rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                             bg_color=_pure_bg, bg_depth=_pure_bg_depth)["render"]
                 torchvision.utils.save_image(_rendering, os.path.join(debug_path, '{0:05d}_pure_gs'.format(idx) + ".png"))
-        
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))

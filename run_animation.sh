@@ -36,11 +36,13 @@ python render_mesh_splat_animated.py \
     --texture_obj_path "$MESH_FILE" \
     --mesh_type "$MESH_TYPE" \
     --policy_path "$POLICY_CACHED" \
-    --precaptured_mesh_img_path "$MESH_IMG_DIR" \
     --transform "$TRANSFORM" \
     --iteration "$ITERATION" \
     $IS_WHITE_BG \
     $RESOLUTION 2>&1 
+
+
+    # --precaptured_mesh_img_path "$MESH_IMG_DIR" \
 } | tee "animate.log" 
 
 
