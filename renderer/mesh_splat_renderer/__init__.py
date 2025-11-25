@@ -144,3 +144,119 @@ def render(viewpoint_camera, pc : GaussianModel, pipe,
             "bg_depth": bg_depth
             # "depth": depth_image
             }
+
+
+
+def render_animated(idxs, triangles, viewpoint_camera, pc: GaussianModel, pipe,
+                   bg_color: torch.Tensor = None, bg_depth: torch.Tensor = None,
+                   scaling_modifier=1.0, override_color=None,
+                   mesh_background_color=(1.0, 1.0, 1.0),
+                   textured_mesh=None):
+    """
+    Render the animated scene with triangle-based Gaussian positioning.
+    
+    Background tensor (bg_color) must be on GPU!
+    """
+    
+    # Handle background rendering from textured mesh
+    if bg_color is not None and bg_depth is not None:
+        pass  # Both bg_color and bg_depth are provided
+    elif bg_color is None and bg_depth is not None and textured_mesh is not None:
+        bg_color, _, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=mesh_background_color)
+    elif bg_color is not None and bg_depth is None and textured_mesh is not None:
+        _, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=mesh_background_color)
+    elif bg_color is None and bg_depth is None and textured_mesh is not None:
+        bg_color, bg_depth, _ = mesh_renderer_pytorch3d(viewpoint_camera, textured_mesh,
+                                                image_height=viewpoint_camera.image_height,
+                                                image_width=viewpoint_camera.image_width,
+                                                background_color=mesh_background_color)
+    else:
+        raise ValueError("At least one of bg_color, bg_depth, or textured_mesh must be provided.")
+    
+    # Create zero tensor for screen-space gradients
+    screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    try:
+        screenspace_points.retain_grad()
+    except:
+        pass
+    
+    # Set up rasterization configuration
+    tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+    tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+    viewpoint_camera.camera_center = viewpoint_camera.camera_center
+    raster_settings = GaussianRasterizationSettings(
+        image_height=int(viewpoint_camera.image_height),
+        image_width=int(viewpoint_camera.image_width),
+        tanfovx=tanfovx,
+        tanfovy=tanfovy,
+        bg=bg_color,
+        scale_modifier=scaling_modifier,
+        viewmatrix=viewpoint_camera.world_view_transform,
+        projmatrix=viewpoint_camera.full_proj_transform,
+        sh_degree=pc.active_sh_degree,
+        campos=viewpoint_camera.camera_center,
+        prefiltered=False,
+        debug=pipe.debug,
+        depth=bg_depth
+    )
+
+    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+    
+    # Compute Gaussian positions from triangles using alpha blending
+    _xyz = torch.matmul(pc.alpha, triangles)
+    _xyz = _xyz.reshape(_xyz.shape[0] * _xyz.shape[1], 3)
+
+    means3D = _xyz
+    means2D = screenspace_points
+    opacity = pc.get_opacity
+    pc.triangles = triangles
+    pc.prepare_scaling_rot()
+
+    # Handle covariance computation
+    scales = None
+    rotations = None
+    cov3D_precomp = None
+    if pipe.compute_cov3D_python:
+        cov3D_precomp = pc.get_covariance(scaling_modifier)
+    else:
+        scales = pc.get_scaling
+        rotations = pc.get_rotation
+
+    # Handle color computation
+    shs = None
+    colors_precomp = None
+    if override_color is None:
+        if pipe.convert_SHs_python:
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
+            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+            dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)
+            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
+            colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
+        else:
+            shs = pc.get_features
+    else:
+        colors_precomp = override_color
+
+    # Rasterize visible Gaussians to image
+    rendered_image, radii = rasterizer(
+        means3D=means3D,
+        means2D=means2D,
+        shs=shs,
+        colors_precomp=colors_precomp,
+        opacities=opacity,
+        scales=scales,
+        rotations=rotations,
+        cov3D_precomp=cov3D_precomp)
+    
+    return {"render": rendered_image,
+            "viewspace_points": screenspace_points,
+            "visibility_filter": radii > 0,
+            "radii": radii,
+            "bg_color": bg_color,
+            "bg_depth": bg_depth}

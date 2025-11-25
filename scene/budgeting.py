@@ -106,11 +106,10 @@ def get_budgeting_policy(name: str, mesh=None, **kwargs) -> BudgetingPolicy:
         "distortion": DistortionMapBudgetingPolicy,
         "distortion_no_avg": partial(DistortionMapBudgetingPolicy, is_averaging_across_views=False),
         
-        "mixed": partial(MixedBudgetingPolicy), # not yet implemented
-        
-        "mixed_v3g1": partial(MixedBudgetingPolicy, weight_visual=0.75, weight_geometry=0.25), 
-        "mixed_v2g2": partial(MixedBudgetingPolicy, weight_visual=0.5, weight_geometry=0.5), 
-        "mixed_v1g3": partial(MixedBudgetingPolicy, weight_visual=0.25, weight_geometry=0.75), 
+        # "mixed": partial(MixedBudgetingPolicy), # not yet implemented
+        # "mixed_v3g1": partial(MixedBudgetingPolicy, weight_visual=0.75, weight_geometry=0.25), 
+        # "mixed_v2g2": partial(MixedBudgetingPolicy, weight_visual=0.5, weight_geometry=0.5), 
+        # "mixed_v1g3": partial(MixedBudgetingPolicy, weight_visual=0.25, weight_geometry=0.75), 
         
         # "from_file": None, # currently handled in dataset_reader::get_num_splats_per_triangle
     }
