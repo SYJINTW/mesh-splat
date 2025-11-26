@@ -18,10 +18,20 @@ POLICY="area"
 MODEL_PATH="output/1125_hotdog_milo/hotdog/${POLICY}_${BUDGET}_occlusion"
 
 # Animation settings
-TRANSFORM="hotdog_fly"  # choices: ficus_sinus, hotdog_fly, ficus_pot, ship_sinus, make_smaller, none
+TRANSFORM="ship_sinus"  # choices: ficus_sinus, hotdog_fly, ficus_pot, ship_sinus, make_smaller, none
+
+# "ficus_sinus": transform_ficus_sinus,
+# "hotdog_fly": transform_hotdog_fly,
+# "ficus_pot": transform_ficus_pot,
+# "ship_sinus": transform_ship_sinus,
+# "make_smaller": make_smaller,
+# "none": do_not_transform
+
 
 IS_WHITE_BG=""  # set to "--white_background" if the dataset has white background
 RESOLUTION=""   # or "--resolution 4" for faster debugging
+OCCLUSION=""
+
 
 # ======= Run Animation ======
 {
@@ -30,7 +40,7 @@ python render_mesh_splat_animated.py \
     -s "$DATASET_DIR" \
     --gs_type gs_mesh \
     --skip_train \
-    --occlusion \
+    $OCCLUSION \
     --total_splats "$BUDGET" \
     --alloc_policy "$POLICY" \
     --texture_obj_path "$MESH_FILE" \
@@ -48,7 +58,7 @@ python render_mesh_splat_animated.py \
 
 
 RENDER_DIR="${MODEL_PATH}/test/ours_${ITERATION}/renders_animated_gs_mesh"
-VIDEO_PATH="${MODEL_PATH}/test/ours_${ITERATION}/animation.mp4"
+VIDEO_PATH="${MODEL_PATH}/test/ours_${ITERATION}/${TRANSFORM}_${OCCLUSION}_animation.mp4"
 
 echo "Animation rendering completed!"
 echo "Results saved to: ${RENDER_DIR}"

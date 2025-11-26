@@ -43,8 +43,8 @@ def transform_ficus_sinus(vertices, t, idxs):
 def transform_hotdog_fly(vertices, t, idxs):
     vertices_new = vertices.clone()
     f = torch.sin(t) * 0.5
-    vertices_new[:, 2] += f * vertices[:, 0] ** 2 # parabola
-    #vertices_new[:, 2] += 0.3 * torch.sin(vertices[:, 0] * torch.pi + t)
+    # vertices_new[:, 2] += f * vertices[:, 0] ** 2 # parabola
+    vertices_new[:, 2] += 0.3 * torch.sin(vertices[:, 0] * torch.pi + t)
     # vertices_new[:, 2] += t * (vertices[:, 0] ** 2 + vertices[:, 1] ** 2) ** (1 / 2) * 0.01
     return vertices_new
 
@@ -103,10 +103,18 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
     # Choose indexes if you want to change only part of the mesh
     idxs = None
 
+    # [Timing] Initialize counters
+    total_anim_time = 0.0
+    total_render_time = 0.0
+    loop_start_time = time.time()
+
     for idx, view in enumerate(tqdm(views, desc="Rendering animated progress")):
         # Debug flag for saving intermediate images
         debug_flag = (idx % 10 == 0)
         
+        # [Timing] Start animation timer
+        t_anim_start = time.time()
+
         # Apply transformation to vertices
         if transform_func is not None:
             new_gs_vertices = transform_func(vertices.clone(), t[idx], idxs)
@@ -154,6 +162,11 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         # Update the gaussians' vertices reference (needed for prepare_scaling_rot)
         gaussians.vertices = new_gs_vertices
 
+        # [Timing] End animation timer
+        torch.cuda.synchronize()
+        t_anim_end = time.time()
+        total_anim_time += (t_anim_end - t_anim_start)
+
         # Render
         # rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
         #                           background,
@@ -184,18 +197,21 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         
         
         pure_bg_template = background
-        pure_bg = torch.tensor(pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+        pure_bg = pure_bg_template.clone().detach().view(3, 1, 1)
         pure_bg = pure_bg.expand(3, view.image_height, view.image_width)
         pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
         
         
+        # [Timing] Start render timer
+        t_render_start = time.time()
+
         # Render based on gs_type
         if gs_type == "gs":
             # Pure GS rendering without textured mesh
             
             rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                        bg_color=pure_bg, bg_depth=pure_bg_depth)["render"]
-            print("\033[94m [INFO] AnimatedRender::GS using pure GS rasterizer\033[0m")
+            # print("\033[94m [INFO] AnimatedRender::GS using pure GS rasterizer\033[0m")
             
         elif gs_type == "gs_mesh":
             
@@ -208,24 +224,30 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
                                            bg_color=bg, bg_depth=bg_depth,
                                            textured_mesh=current_textured_mesh,
                                            mesh_background_color=background)["render"]
-                print("\033[92m [INFO] AnimatedRender::DTGS using Depth+Texture+GS rasterizer\033[0m")
+                # print("\033[92m [INFO] AnimatedRender::DTGS using Depth+Texture+GS rasterizer\033[0m")
             else:
                 pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
                 rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                            bg_color=bg, bg_depth=pure_bg_depth,
                                            textured_mesh=current_textured_mesh,
                                            mesh_background_color=background)["render"]
-                print("\033[96m [INFO] AnimatedRender::TGS using Texture+GS rasterizer\033[0m")
+                # print("\033[96m [INFO] AnimatedRender::TGS using Texture+GS rasterizer\033[0m")
             
             # Debug: save pure gaussian
             if debug_flag:
                 _pure_bg_template = background
-                _pure_bg = torch.tensor(_pure_bg_template, dtype=torch.float32, device="cuda").view(3, 1, 1)
+                _pure_bg = _pure_bg_template.clone().detach().view(3, 1, 1)
                 _pure_bg = _pure_bg.expand(3, view.image_height, view.image_width)
                 _pure_bg_depth = torch.full((1, view.image_height, view.image_width), 0, dtype=torch.float32, device="cuda")
                 _rendering = render_animated(idxs, triangles, view, gaussians, pipeline,
                                             bg_color=_pure_bg, bg_depth=_pure_bg_depth)["render"]
                 torchvision.utils.save_image(_rendering, os.path.join(debug_path, '{0:05d}_pure_gs'.format(idx) + ".png"))
+        
+        # [Timing] End render timer
+        torch.cuda.synchronize()
+        t_render_end = time.time()
+        total_render_time += (t_render_end - t_render_start)
+
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
@@ -234,6 +256,18 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         if debug_flag:
             torchvision.utils.save_image(rendering, os.path.join(debug_path, '{0:05d}_rendering'.format(idx) + ".png"))
             # torchvision.utils.save_image(gt, os.path.join(debug_path, '{0:05d}_gt'.format(idx) + ".png"))
+
+    # [Timing] Calculate and print stats
+    loop_end_time = time.time()
+    total_loop_time = loop_end_time - loop_start_time
+    num_frames = len(views)
+    fps = num_frames / total_loop_time if total_loop_time > 0 else 0
+    
+    print(f"\n[INFO] Timing Statistics for {name}:")
+    print(f"  - Total Animation Calculation Time: {total_anim_time:.4f}s (Avg: {total_anim_time/num_frames:.4f}s/frame)")
+    print(f"  - Total Rasterization Time: {total_render_time:.4f}s (Avg: {total_render_time/num_frames:.4f}s/frame)")
+    print(f"  - Total Loop Time (incl. I/O): {total_loop_time:.4f}s")
+    print(f"  - FPS: {fps:.2f}")
 
 
 def render_sets(gs_type: str, dataset: ModelParams, iteration: int, pipeline: PipelineParams, 
@@ -308,6 +342,7 @@ def render_sets(gs_type: str, dataset: ModelParams, iteration: int, pipeline: Pi
 
 
 if __name__ == "__main__":
+    script_start_time = time.time()
     parser = ArgumentParser(description="Animated rendering script parameters")
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
@@ -354,3 +389,5 @@ if __name__ == "__main__":
                policy_path=args.policy_path,
                precaptured_mesh_img_path=args.precaptured_mesh_img_path,
                transform_name=args.transform)
+    
+    print(f"[INFO] Total script execution time: {time.time() - script_start_time:.2f} seconds")
