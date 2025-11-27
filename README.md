@@ -1,7 +1,7 @@
-# Mesh-Splat
+# Layered Mesh-Gaussian
 
-Mesh-Splat is a research implementation built upon the official ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).  
-This project extends the original [official codebase](https://waczjoan.github.io/gaussian-mesh-splatting/) with additional utilities and experimental workflows for mesh-driven Gaussian Splatting and 3D rendering.
+Layered Mesh-Gaussian (LMG) is a research implementation built upon the official ["GaMeS: Mesh-Based Adapting and Modification of Gaussian Splatting"](https://arxiv.org/abs/2402.01459).  
+This project extends the original [official codebase](https://waczjoan.github.io/gaussian-mesh-splatting/) with additional utilities and experimental workflows for mesh-driven Gaussian Splatting and hybrid 3D representation rendering.
 
 # Installation
 
@@ -377,3 +377,15 @@ output/
 - **Precaptured images:** Optional. If not provided, will be computed on-the-fly during training
 - **Debugging:** Enable `--debugging` and set `--debug_freq` to inspect intermediate visualizations
 - **Occlusion flag:** Works independently - use with or without warmup as needed
+
+# Citation
+
+If you find this repository/work helpful in your research, welcome to cite these papers and give a ⭐.
+
+```
+@InProceedings{Sun_2025,
+    author    = {Sun, Yuan-Chun and Chen, Guodong and Kondori, Sam Ziaie and Dasari, Mallesham and Hsu, Cheng-Hsin},
+    title     = {Layered Mesh-Gaussian},
+    year      = {2025},
+}
+```
