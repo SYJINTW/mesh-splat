@@ -180,20 +180,22 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
         bg = None
         bg_depth = None
         
-        if precaptured_mesh_img_path:
-            cached_bg_path = Path(precaptured_mesh_img_path) / "test_mesh_texture" / f"{view.image_name}.png"
-            cached_bg_depth_path = Path(precaptured_mesh_img_path) / "test_mesh_depth" / f"{view.image_name}.pt"
+        
+        # [NOTE] don't use precaptured, need to calculate rigged positions in place
+        # if precaptured_mesh_img_path:
+        #     cached_bg_path = Path(precaptured_mesh_img_path) / "test_mesh_texture" / f"{view.image_name}.png"
+        #     cached_bg_depth_path = Path(precaptured_mesh_img_path) / "test_mesh_depth" / f"{view.image_name}.pt"
             
-            if cached_bg_path.exists():
-                img = Image.open(cached_bg_path).convert("RGB")
-                img = img.resize((view.image_width, view.image_height), Image.BILINEAR)
-                transform = T.Compose([T.ToTensor()])
-                bg = transform(img).to(torch.float32).cuda()
-                if debug_flag:
-                    torchvision.utils.save_image(bg, os.path.join(debug_path, '{0:05d}_bg'.format(idx) + ".png"))
+        #     if cached_bg_path.exists():
+        #         img = Image.open(cached_bg_path).convert("RGB")
+        #         img = img.resize((view.image_width, view.image_height), Image.BILINEAR)
+        #         transform = T.Compose([T.ToTensor()])
+        #         bg = transform(img).to(torch.float32).cuda()
+        #         if debug_flag:
+        #             torchvision.utils.save_image(bg, os.path.join(debug_path, '{0:05d}_bg'.format(idx) + ".png"))
             
-            if cached_bg_depth_path.exists():
-                bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
+        #     if cached_bg_depth_path.exists():
+        #         bg_depth = torch.load(cached_bg_depth_path).unsqueeze(0).to("cuda")
         
         
         pure_bg_template = background
@@ -218,6 +220,9 @@ def render_set(gs_type, model_path, name, iteration, views, gaussians, pipeline,
             # [NOTE] debug for now
             # bg = pure_bg
             # bg_depth = pure_bg_depth
+            
+            # [NOTE] to render base layer only
+            # gaussians._opacity = torch.full_like(gaussians._opacity, -1e10) # effectively transparent gaussians
             
             if occlusion:
                 rendering = render_animated(idxs, triangles, view, gaussians, pipeline,

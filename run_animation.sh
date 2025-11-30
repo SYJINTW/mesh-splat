@@ -18,7 +18,7 @@ POLICY="area"
 MODEL_PATH="output/1125_hotdog_milo/hotdog/${POLICY}_${BUDGET}_occlusion"
 
 # Animation settings
-TRANSFORM="ship_sinus"  # choices: ficus_sinus, hotdog_fly, ficus_pot, ship_sinus, make_smaller, none
+TRANSFORM="hotdog_fly"  # choices: ficus_sinus, hotdog_fly, ficus_pot, ship_sinus, make_smaller, none
 
 # "ficus_sinus": transform_ficus_sinus,
 # "hotdog_fly": transform_hotdog_fly,
@@ -28,9 +28,9 @@ TRANSFORM="ship_sinus"  # choices: ficus_sinus, hotdog_fly, ficus_pot, ship_sinu
 # "none": do_not_transform
 
 
-IS_WHITE_BG=""  # set to "--white_background" if the dataset has white background
+IS_WHITE_BG="-w"  # set to "--white_background" if the dataset has white background
 RESOLUTION=""   # or "--resolution 4" for faster debugging
-OCCLUSION=""
+OCCLUSION="--occlusion"
 
 
 # ======= Run Animation ======
@@ -39,7 +39,6 @@ python render_mesh_splat_animated.py \
     -m "$MODEL_PATH" \
     -s "$DATASET_DIR" \
     --gs_type gs_mesh \
-    --skip_train \
     $OCCLUSION \
     --total_splats "$BUDGET" \
     --alloc_policy "$POLICY" \
@@ -52,6 +51,7 @@ python render_mesh_splat_animated.py \
     $RESOLUTION 2>&1 
 
 
+    # --skip_train \
     # --precaptured_mesh_img_path "$MESH_IMG_DIR" \
 } | tee "animate.log" 
 
